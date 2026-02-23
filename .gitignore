@@ -40,3 +40,6 @@ ENV/
 
 # Weights & Biases
 wandb/
+
+# macOS
+.DS_Store
