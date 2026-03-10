@@ -1,23 +1,29 @@
 """
 Equilibrium Experiment
 ======================
-For each candidate background strategy (one of 10), place 15 background agents
-on that strategy and sweep a single deviator agent across all 10 strategies.
-Record the deviator's profit advantage (deviator profit − mean background profit)
-averaged over NUM_RUNS simulation runs.
+For each of 10 background strategies, sweep a single deviator agent across all
+10 strategies (100 runs each), for 1000 runs per background strategy and 10,000
+runs total.
 
-A strategy S* is a Nash equilibrium candidate if the deviator's best response
-when facing 15 agents on S* is S* itself (no profitable deviation exists).
+Each simulation: 1 deviator agent + 15 background agents = 16 agents total.
+
+The advantage table stores mean deviator profit for each (bg, dev) pair.
+Within each row the 10 values are compared to find the best deviator strategy.
+
+A strategy S* is a Nash equilibrium candidate if the best deviator strategy
+when facing S* is S* itself (no profitable deviation exists).
 
 Output: 10×10 advantage table + best-deviation summary.
 """
 
+import random
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+import torch
 from tqdm import tqdm
 
-from marketsim.simulator.simulator import Simulator  # direct submodule import avoids hbl_agent dep
+from marketsim.simulator.simulator import Simulator
 from marketsim.agent.zero_intelligence_agent import ZIAgent
 
 
@@ -52,21 +58,22 @@ STRATEGY_LABELS = {
 }
 
 # ---------------------------------------------------------------------------
-# Market environment (Environment B from experiment_framework.py)
+# Market environment (Environment A from experiment_framework.py)
 # ---------------------------------------------------------------------------
 
 ENV = {
-    'lam':       0.005,   # arrival intensity
+    'lam':       0.005,   # arrival intensity (0.005 → ~250 arrivals/sim vs ~16 before)
     'mean':      1e5,     # long-run fundamental value
     'r':         0.01,    # mean-reversion speed (kappa)
     'shock_var': 1e6,     # fundamental shock variance
     'pv_var':    5e6,     # private value variance
     'q_max':     10,      # max agent position
-    'sim_time':  1000,    # time steps per simulation run
+    'sim_time':  2000,    # time steps per simulation run
     'n_bg':      15,      # number of background agents
 }
 
-NUM_RUNS = 100  # repetitions per (bg_strategy, dev_strategy) cell
+NUM_RUNS = 500   # simulation runs per (bg_strategy, dev_strategy) cell
+BASE_SEED = 42   # root seed for reproducibility
 
 
 # ---------------------------------------------------------------------------
@@ -78,19 +85,31 @@ def _run_cell(args):
     Run NUM_RUNS simulations for one (bg_idx, dev_idx) cell.
 
     Agent layout:
-        Agent 0         → deviator (plays dev strategy)
-        Agents 1 .. n_bg → background (all play bg strategy)
+        Agent 0          → deviator (plays dev strategy)
+        Agents 1 – n_bg  → background (all play bg strategy)
+
+    Each run is seeded deterministically from (base_seed, bg_idx, run_idx) —
+    intentionally *excluding* dev_idx so that all deviator strategies in the
+    same row share the same fundamental path and background-agent sequence
+    (Common Random Numbers / CRN).  This collapses within-row variance and
+    makes small between-strategy differences detectable at N=100.
 
     Returns:
-        (bg_idx, dev_idx, mean_dev_profit, mean_bg_profit)
+        (bg_idx, dev_idx, mean_dev_profit, std_dev_profit)
     """
-    bg_idx, dev_idx, num_runs = args
+    bg_idx, dev_idx, num_runs, base_seed = args
     bg = STRATEGIES[bg_idx]
     dev = STRATEGIES[dev_idx]
 
-    dev_profits, bg_profits = [], []
+    dev_profits = []
 
-    for _ in range(num_runs):
+    for run_idx in range(num_runs):
+        # CRN seed: exclude dev_idx so all dev strategies in one row share
+        # the same market environment (fundamental + BG arrivals).
+        run_seed = base_seed + bg_idx * 100_000 + run_idx
+        random.seed(run_seed)
+        np.random.seed(run_seed)
+        torch.manual_seed(run_seed)
         sim = Simulator(
             num_background_agents=0,  # we populate agents manually
             sim_time=ENV['sim_time'],
@@ -133,67 +152,73 @@ def _run_cell(args):
             return agent.get_pos_value() + agent.position * fv + agent.cash
 
         dev_profits.append(profit(sim.agents[0]))
-        bg_profits.append(
-            float(np.mean([profit(sim.agents[i]) for i in range(1, ENV['n_bg'] + 1)]))
-        )
 
-    return bg_idx, dev_idx, float(np.mean(dev_profits)), float(np.mean(bg_profits))
+    return bg_idx, dev_idx, float(np.mean(dev_profits)), float(np.std(dev_profits, ddof=1))
 
 
 # ---------------------------------------------------------------------------
 # Main experiment
 # ---------------------------------------------------------------------------
 
-def run_equilibrium_experiment(num_runs=NUM_RUNS, n_processes=None):
+def run_equilibrium_experiment(num_runs=NUM_RUNS, n_processes=None, base_seed=BASE_SEED):
     """
     Run the full 10×10 strategy matrix experiment.
 
+    For each of the 100 (bg, dev) cells, NUM_RUNS simulations are run with
+    1 deviator agent and 15 background agents (16 total).
+
+    Each run is seeded deterministically so results are reproducible.
+
     Returns:
-        advantage_df  : DataFrame of shape (10, 10)
-                        advantage_df[bg][dev] = mean(dev_profit) − mean(bg_profit)
+        advantage_df : DataFrame of shape (10, 10) — mean deviator profit
+        se_df        : DataFrame of shape (10, 10) — standard errors (std/√N)
     """
     n = len(STRATEGIES)
-    tasks = [(bg, dev, num_runs) for bg in range(n) for dev in range(n)]
+    tasks = [(bg, dev, num_runs, base_seed) for bg in range(n) for dev in range(n)]
 
     if n_processes is None:
         n_processes = min(mp.cpu_count(), len(tasks))
 
     advantage = np.zeros((n, n))
+    advantage_std = np.zeros((n, n))
 
     total_sims = len(tasks) * num_runs
     print(
         f"Strategy matrix: {n}×{n} cells  |  {num_runs} runs/cell  |  "
-        f"{total_sims:,} total simulations  |  {n_processes} processes"
+        f"{total_sims:,} total simulations  |  {n_processes} processes  |  "
+        f"base_seed={base_seed}"
     )
 
     with mp.Pool(n_processes) as pool:
-        for bg_idx, dev_idx, dev_mean, bg_mean in tqdm(
+        for bg_idx, dev_idx, dev_mean, dev_std in tqdm(
             pool.imap_unordered(_run_cell, tasks),
             total=len(tasks),
             desc="cells completed",
         ):
-            advantage[bg_idx, dev_idx] = dev_mean - bg_mean
+            advantage[bg_idx, dev_idx] = dev_mean
+            advantage_std[bg_idx, dev_idx] = dev_std
 
     labels = [f"S{i}" for i in range(n)]
-    df = pd.DataFrame(
-        advantage,
-        index=pd.Index(labels, name="BG Strategy →"),
-        columns=pd.Index(labels, name="Deviator ↓"),
-    )
-    return df
+    index = pd.Index(labels, name="BG Strategy →")
+    columns = pd.Index(labels, name="Deviator ↓")
+    df = pd.DataFrame(advantage, index=index, columns=columns)
+    df_se = pd.DataFrame(advantage_std / np.sqrt(num_runs), index=index, columns=columns)
+    return df, df_se
 
 
 # ---------------------------------------------------------------------------
 # Display
 # ---------------------------------------------------------------------------
 
-def display_results(df):
+def display_results(df, df_se=None):
+    n = len(df)
+
     # ── Advantage matrix ────────────────────────────────────────────────────
     print("\n" + "=" * 80)
-    print("PROFIT ADVANTAGE TABLE")
+    print("DEVIATOR PROFIT TABLE")
     print("Rows = background strategy (what the 15 BG agents play)")
-    print("Cols = deviator strategy   (what the 1 test agent plays)")
-    print("Value = mean(deviator profit) − mean(background profit)")
+    print("Cols = deviator strategy   (what the 1 deviator agent plays)")
+    print("Value = mean deviator profit  (compare across columns within each row)")
     print("=" * 80)
     print(df.round(1).to_string())
 
@@ -204,17 +229,31 @@ def display_results(df):
     print("\n" + "=" * 80)
     print("BEST DEVIATOR STRATEGY FOR EACH BACKGROUND STRATEGY")
     print("=" * 80)
-    print(f"{'BG Strategy':>12} │ {'Best Deviation':>14} │ {'Advantage':>10} │ NE?")
-    print("─" * 52)
+    header = f"{'BG Strategy':>12} │ {'Best Deviation':>14} │ {'Advantage':>10}"
+    if df_se is not None:
+        header += f" │ {'±SE':>8}"
+    header += " │ NE?"
+    print(header)
+    print("─" * (len(header) + 2))
     ne_candidates = []
     for bg_label in df.index:
         best = best_dev[bg_label]
         adv = best_adv[bg_label]
+
+        # A strategy is NE if playing the same strategy as the BG agents is
+        # the highest-profit choice for the deviator (diagonal is the row max).
         is_ne = (bg_label == best)
+
         ne_str = " ✓ NE" if is_ne else ""
         if is_ne:
             ne_candidates.append(bg_label)
-        print(f"{bg_label:>12} │ {best:>14} │ {adv:>10.1f}{ne_str}")
+
+        row = f"{bg_label:>12} │ {best:>14} │ {adv:>10.1f}"
+        if df_se is not None:
+            se_val = df_se.loc[bg_label, best]
+            row += f" │ {se_val:>8.1f}"
+        row += ne_str
+        print(row)
 
     # ── Equilibrium summary ─────────────────────────────────────────────────
     print("\n" + "=" * 80)
@@ -239,9 +278,13 @@ def display_results(df):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    df = run_equilibrium_experiment()
-    best_dev = display_results(df)
+    df, df_se = run_equilibrium_experiment()
+    best_dev = display_results(df, df_se)
 
     out_file = "equilibrium_results.csv"
     df.to_csv(out_file)
     print(f"\nAdvantage matrix saved to {out_file}")
+
+    se_file = "equilibrium_se.csv"
+    df_se.to_csv(se_file)
+    print(f"Standard errors saved to {se_file}")

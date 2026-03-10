@@ -43,3 +43,6 @@ wandb/
 
 # macOS
 .DS_Store
+
+# Training runs (model weights, checkpoints, logs)
+runs/
