@@ -61,7 +61,7 @@ class TRONPolicy(nn.Module):
         n_eta_bins:   Number of discrete eta actions (default 2).
     """
 
-    SHADE_BINS: np.ndarray = np.linspace(0, 600, 42)  # 42 uniformly spaced values
+    SHADE_BINS: np.ndarray = np.linspace(0, 600, 42)  # 42 uniformly spaced values (default)
     ETA_BINS: List[float] = [0.0, 1.0]                 # binary: market-take vs market-make
 
     def __init__(
@@ -70,9 +70,13 @@ class TRONPolicy(nn.Module):
         hidden_dim: int = 128,
         n_shade_bins: int = 42,
         n_eta_bins: int = 2,
+        shade_bins: Optional[np.ndarray] = None,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
+        if shade_bins is not None:
+            self.SHADE_BINS = np.asarray(shade_bins)
+            n_shade_bins = len(self.SHADE_BINS)
 
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -171,6 +175,8 @@ class TRONAgent(ZIAgent):
         shade=None,
         normalizers=None,
         weights_path: Optional[str] = None,
+        hidden_dim: int = 128,
+        shade_bins: Optional[np.ndarray] = None,
     ):
         if shade is None:
             shade = [250, 500]
@@ -187,7 +193,7 @@ class TRONAgent(ZIAgent):
 
         self.normalizers = normalizers
 
-        self.policy = TRONPolicy(input_dim=14)
+        self.policy = TRONPolicy(input_dim=14, hidden_dim=hidden_dim, shade_bins=shade_bins)
         self.policy.eval()
 
         if weights_path is not None:
@@ -297,7 +303,7 @@ class TRONAgent(ZIAgent):
         shade_idx = int(Q_shade.argmax(dim=-1).item())
         eta_idx = int(Q_eta.argmax(dim=-1).item())
 
-        shade_val = float(TRONPolicy.SHADE_BINS[shade_idx])
+        shade_val = float(self.policy.SHADE_BINS[shade_idx])
         eta = float(TRONPolicy.ETA_BINS[eta_idx])
 
         t = self.market.get_time()

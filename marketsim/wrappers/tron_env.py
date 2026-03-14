@@ -83,6 +83,7 @@ class TRONEnv(gym.Env):
         normalizers=None,
         bg_strategies=None,
         warmup_fraction: float = 0.1,
+        shade_bins=None,
     ):
         """
         Args:
@@ -123,6 +124,8 @@ class TRONEnv(gym.Env):
         self.normalizers = normalizers
         self.bg_strategies = bg_strategies
         self.warmup_fraction = warmup_fraction
+        if shade_bins is not None:
+            self.SHADE_BINS = np.asarray(shade_bins)
         self.time = 0
         self.last_value = 0.0
         self.current_side = BUY  # side assigned before each RL decision
@@ -276,10 +279,10 @@ class TRONEnv(gym.Env):
     def run_agents_only(self):
         """Warm-up: advance background agents for warmup_fraction of sim_time."""
         for _ in range(int(self.warmup_fraction * self.sim_time)):
-            if self.arrivals[self.time]:
+            if self.arrivals.get(self.time):
                 self.agents_step()
                 self.market_step(agent_only=True)
-            if self.arrivals_zi[self.time]:
+            if self.arrivals_zi.get(self.time):
                 if self.arrival_index_zi == self.arrivals_sampled:
                     self.arrival_times_zi = sample_arrivals(
                         self.lam_zi, self.arrivals_sampled
@@ -298,7 +301,7 @@ class TRONEnv(gym.Env):
             True  if episode ended (time >= sim_time) before RL agent arrived.
             False if RL agent arrived; also calls update_obs().
         """
-        while len(self.arrivals_zi[self.time]) == 0 and self.time < self.sim_time:
+        while not self.arrivals_zi.get(self.time) and self.time < self.sim_time:
             self.agents_step()
             self.market_step(agent_only=True)
             self.time += 1
@@ -374,8 +377,8 @@ class TRONEnv(gym.Env):
 
     def agents_step(self):
         """Let all background agents that arrive at self.time act."""
-        agents = self.arrivals[self.time]
-        if len(agents) == 0:
+        agents = self.arrivals.get(self.time)
+        if not agents:
             return
         self.market.event_queue.set_time(self.time)
         for agent_id in agents:

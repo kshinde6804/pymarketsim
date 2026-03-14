@@ -164,14 +164,15 @@ class FourHeap:
         return self.sell_unmatched.peek()
 
     def update_midprice(self, lookback=14):
-        best_ask = self.get_best_ask()
-        best_bid = self.get_best_bid()
+        best_ask = self.sell_unmatched.peek()
+        best_bid = self.buy_unmatched.peek()
 
         if math.isinf(best_ask) or math.isinf(best_bid):
-            if len(self.midprices) < lookback and len(self.midprices) > 0:
-                self.midprices.append(np.mean(self.midprices))
-            elif len(self.midprices) >= lookback:
-                self.midprices.append(np.mean(self.midprices[-lookback:]))
+            midprices = self.midprices
+            n = len(midprices)
+            if n > 0:
+                window = midprices[-lookback:] if n >= lookback else midprices
+                midprices.append(sum(window) / len(window))
         else:
             self.midprices.append((best_ask + best_bid) / 2)
 

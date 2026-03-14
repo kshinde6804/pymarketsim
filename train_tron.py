@@ -4,7 +4,7 @@ train_tron.py — Train the TRON agent on TRONEnv using R2D2.
 R2D2 (Recurrent Replay Distributed DQN) with:
   - Dueling DQN architecture (TRONPolicy)
   - LSTM recurrent state stored in replay sequences
-  - Fixed-length sequence replay (seq_len=80, burnin=40)
+  - Fixed-length sequence replay (seq_len=32, burnin=4)
   - n-step returns (n=5)
   - Double DQN target computation
   - Epsilon-greedy exploration with linear decay
@@ -46,6 +46,18 @@ import torch.optim as optim
 from marketsim.agent.tron_agent import TRONPolicy
 from marketsim.wrappers.tron_env import TRONEnv
 
+# ── Shade bin options ──────────────────────────────────────────────────────────
+
+# Default: 42 uniform bins over [0, 600] (14.3 spacing throughout)
+UNIFORM_SHADE_BINS = np.linspace(0, 600, 42)
+
+# Skewed: 10 coarse bins in [0, 300), 32 fine bins in [300, 600] (~9.7 spacing
+# in the competitive region near S8). More resolution where it matters.
+SKEWED_SHADE_BINS = np.concatenate([
+    np.linspace(0, 300, 11)[:-1],  # 0, 30, 60, ..., 270
+    np.linspace(300, 600, 32),      # 300, 309.7, ..., 600
+])
+
 # ── ENV hyper-parameters (match equilibrium experiment) ───────────────────────
 
 # ZI strategy set from equilibrium_experiment.py (inlined to avoid path issues)
@@ -68,10 +80,10 @@ BG_STRATEGIES = [
 ]
 
 ENV_KWARGS = dict(
-    num_background_agents=15,
+    num_background_agents=24,  # paper: N=25 total (24 ZI + 1 TRON)
     sim_time=2000,
     lam=0.005,
-    lam_zi=0.005,
+    lam_zi=0.005,         # matches background lam → equal participation (~10 RL steps/episode)
     mean=1e5,
     r=0.01,
     shock_var=1e6,
@@ -81,26 +93,27 @@ ENV_KWARGS = dict(
     normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5},
     bg_strategies=BG_STRATEGIES,
     warmup_fraction=0.0,
+    shade_bins=UNIFORM_SHADE_BINS,  # overridden to SKEWED_SHADE_BINS via --skew-bins
 )
 
 # ── R2D2 hyper-parameters ─────────────────────────────────────────────────────
 
-SEQ_LEN = 80          # Total sequence length stored per replay entry
-BURNIN = 40           # Steps to run LSTM before computing loss (steps 0..39)
+SEQ_LEN = 32          # ~10 steps/episode at lam_zi=0.005; 32 contains full episodes (99.9th pctile ~22)
+BURNIN = 4            # Small warmup; h0=0 at episode start so no stale state
 N_STEP = 5            # n-step return horizon
 GAMMA = 0.99          # Discount factor
 BATCH_SIZE = 64       # Sequences sampled per gradient update
-BUFFER_CAPACITY = 10_000  # Max sequences (episodes ~10 steps → 10k seqs = 100k real steps)
+BUFFER_CAPACITY = 50_000  # Buffer sized for shorter ~10-step episodes
 LR = 1e-4
 TARGET_UPDATE_FREQ = 1000  # Hard-copy online → target every N gradient steps
 EPS_START = 1.0
 EPS_END = 0.05
-EPS_DECAY_STEPS = 500_000
+EPS_DECAY_STEPS = 1_000_000
 GRAD_CLIP = 10.0
 LEARNING_STARTS = 100    # Sequences collected before first gradient step
 TRAIN_FREQ = 4           # Gradient update every N env steps
-EVAL_FREQ = 20_000       # Evaluate every N environment steps
-EVAL_EPISODES = 10
+EVAL_FREQ = 50_000       # Evaluate every N environment steps
+EVAL_EPISODES = 100
 
 
 # ── Replay Buffer ─────────────────────────────────────────────────────────────
@@ -336,6 +349,7 @@ class R2D2Trainer:
         eps_end: float = EPS_END,
         eps_decay_steps: int = EPS_DECAY_STEPS,
         grad_clip: float = GRAD_CLIP,
+        shade_bins: Optional[np.ndarray] = None,
     ):
         self.gamma = gamma
         self.n_step = n_step
@@ -348,8 +362,8 @@ class R2D2Trainer:
         self.eps_decay_steps = eps_decay_steps
         self.grad_clip = grad_clip
 
-        self.online = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim)
-        self.target = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim)
+        self.online = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins)
+        self.target = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
 
@@ -384,8 +398,8 @@ class R2D2Trainer:
             Q_shade, Q_eta, new_h_c = self.online(obs_t, h_c)
 
         if random.random() < self.epsilon:
-            shade_idx = random.randrange(len(TRONPolicy.SHADE_BINS))
-            eta_idx = random.randrange(len(TRONPolicy.ETA_BINS))
+            shade_idx = random.randrange(len(self.online.SHADE_BINS))
+            eta_idx = random.randrange(len(self.online.ETA_BINS))
         else:
             shade_idx = int(Q_shade.argmax(dim=-1).item())
             eta_idx = int(Q_eta.argmax(dim=-1).item())
@@ -509,7 +523,7 @@ class R2D2Trainer:
         state = torch.load(path, map_location="cpu")
         self.online.load_state_dict(state)
         self.target.load_state_dict(state)
-        self.online.eval()
+        self.online.train()
         self.target.eval()
 
 
@@ -599,14 +613,24 @@ def train(args):
     burnin    = args.burnin
     batch_sz  = args.batch_size
 
+    shade_bins = ENV_KWARGS.get('shade_bins', UNIFORM_SHADE_BINS)
+    hidden_dim = args.hidden_dim
+
     trainer = R2D2Trainer(
         obs_dim=14,
+        hidden_dim=hidden_dim,
         seq_len=seq_len,
         burnin=burnin,
         batch_size=batch_sz,
+        shade_bins=shade_bins,
+        eps_decay_steps=args.eps_decay_steps,
     )
-    buffer  = SequenceReplayBuffer(seq_len=seq_len)
-    collector = SequenceCollector(seq_len=seq_len)
+    buffer  = SequenceReplayBuffer(seq_len=seq_len, hidden_dim=hidden_dim)
+    collector = SequenceCollector(seq_len=seq_len, hidden_dim=hidden_dim)
+
+    if args.load:
+        print(f"Resuming from checkpoint: {args.load}")
+        trainer.load(args.load)
 
     eval_csv = os.path.join(run_dir, "eval_rewards.csv")
     best_model_path = os.path.join(run_dir, "best_model.pt")
@@ -614,23 +638,26 @@ def train(args):
 
     env = TRONEnv(**ENV_KWARGS)
     obs, _ = env.reset()
-    h = torch.zeros(1, 1, 128)
-    c = torch.zeros(1, 1, 128)
+    h = torch.zeros(1, 1, hidden_dim)
+    c = torch.zeros(1, 1, hidden_dim)
     collector.start_sequence(h, c)
 
     ep_reward = 0.0
     ep_rewards = []
     total_steps = args.timesteps
-    next_eval = EVAL_FREQ
+    step = args.start_step
+    trainer._env_steps = args.start_step
+    next_eval = ((args.start_step // EVAL_FREQ) + 1) * EVAL_FREQ
     losses = []
 
+    bins_desc = "skewed" if np.array_equal(shade_bins, SKEWED_SHADE_BINS) else "uniform"
     print(f"\nTraining TRON (R2D2) for {total_steps:,} steps")
     print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={N_STEP}")
-    print(f"  train_freq={TRAIN_FREQ}, learning_starts={LEARNING_STARTS}")
-    print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}\n")
+    print(f"  hidden_dim={hidden_dim}, shade_bins={bins_desc} (n={len(shade_bins)})")
+    print(f"  eps_decay_steps={args.eps_decay_steps}, train_freq={TRAIN_FREQ}")
+    print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, lam_zi={ENV_KWARGS['lam_zi']}\n")
 
     t0 = time.time()
-    step = 0
 
     while step < total_steps:
         action, (h, c) = trainer.select_action(obs, (h, c))
@@ -652,17 +679,16 @@ def train(args):
             collector.start_sequence(h, c)
 
         if done:
-            # Episode ended: zero LSTM, reset env, continue accumulating.
-            # Do NOT flush here — let sequences span episode boundaries so
-            # each seq_len window contains real transitions (not padding).
-            # The done=True flags in the sequence handle value masking.
             ep_rewards.append(ep_reward)
             ep_reward = 0.0
-
+            # Flush partial episode with zero-padding so each sequence = 1 episode.
+            # This matches eval where LSTM is reset to zeros at every episode start.
+            seq = collector.flush(pad_if_short=True)
+            if seq is not None:
+                buffer.add(*seq)
             obs, _ = env.reset()
-            h = torch.zeros(1, 1, 128)
-            c = torch.zeros(1, 1, 128)
-            # Record zeroed state for the next sequence if collector is empty.
+            h = torch.zeros(1, 1, hidden_dim)
+            c = torch.zeros(1, 1, hidden_dim)
             collector.start_sequence(h, c)
 
         # Learn every TRAIN_FREQ steps once buffer has enough sequences.
@@ -704,13 +730,15 @@ def train(args):
 
 def eval_only(args):
     assert args.load, "--eval-only requires --load <path>"
+    shade_bins = ENV_KWARGS.get('shade_bins', UNIFORM_SHADE_BINS)
     print(f"Loading {args.load}")
-    policy = TRONPolicy(input_dim=14)
+    policy = TRONPolicy(input_dim=14, hidden_dim=args.hidden_dim, shade_bins=shade_bins)
     policy.load_state_dict(torch.load(args.load, map_location="cpu"))
     policy.eval()
 
-    mean_r, std_r = evaluate(policy, n_episodes=50)
-    print(f"Eval (50 episodes): mean={mean_r:+.4f}  std={std_r:.4f}")
+    n = args.eval_episodes
+    mean_r, std_r = evaluate(policy, n_episodes=n)
+    print(f"Eval ({n} episodes): mean={mean_r:+.4f}  std={std_r:.4f}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -731,11 +759,44 @@ def parse_args():
                    help="Skip training; only evaluate a saved model")
     p.add_argument("--load", type=str, default=None,
                    help="Path to .pt state_dict for --eval-only or to warm-start")
+    p.add_argument("--start-step", type=int, default=0,
+                   help="Step count to resume from (sets epsilon schedule and eval trigger)")
+    p.add_argument("--n-bg", type=int, default=None,
+                   help="Override num_background_agents in ENV_KWARGS")
+    p.add_argument("--lam-zi", type=float, default=None,
+                   help="Override lam_zi in ENV_KWARGS (RL agent arrival rate)")
+    p.add_argument("--skew-bins", action="store_true",
+                   help="Use skewed shade bins: 10 coarse in [0,300), 32 fine in [300,600]")
+    p.add_argument("--hidden-dim", type=int, default=128,
+                   help="LSTM hidden dimension (default 128)")
+    p.add_argument("--eps-decay-steps", type=int, default=EPS_DECAY_STEPS,
+                   help=f"Steps over which epsilon decays from 1.0 to 0.05 (default {EPS_DECAY_STEPS})")
+    p.add_argument("--bg-strategy", type=int, default=None,
+                   help="Fix all BG agents to a single strategy index 0-9")
+    p.add_argument("--eval-episodes", type=int, default=50,
+                   help="Episodes for --eval-only mode (default 50)")
+    p.add_argument("--seed", type=int, default=42,
+                   help="Global random seed for reproducibility (default 42)")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+    # Apply global seed before any randomness
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+
+    if args.n_bg is not None:
+        ENV_KWARGS['num_background_agents'] = args.n_bg
+    if args.lam_zi is not None:
+        ENV_KWARGS['lam_zi'] = args.lam_zi
+    if args.skew_bins:
+        ENV_KWARGS['shade_bins'] = SKEWED_SHADE_BINS
+    if args.bg_strategy is not None:
+        strat = _STRATEGIES[args.bg_strategy]
+        ENV_KWARGS['bg_strategies'] = [{'shade': strat['shade'], 'eta': strat['eta']}]
     if args.eval_only:
         eval_only(args)
     else:

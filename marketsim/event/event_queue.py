@@ -17,10 +17,14 @@ class EventQueue:
         self.scheduled_activities[t].append(order)
 
     def step(self) -> List[Order]:
-        self.rand.shuffle(self.scheduled_activities[self.current_time])
+        key = self.current_time
         self.current_time += 1
-
-        return self.scheduled_activities[self.current_time - 1]
+        orders = self.scheduled_activities.get(key)
+        if not orders:
+            return []
+        if len(orders) > 1:
+            self.rand.shuffle(orders)
+        return orders
 
     def get_current_time(self):
         return self.current_time

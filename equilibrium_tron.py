@@ -22,11 +22,11 @@ import argparse
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+import torch
 from tqdm import tqdm
 
-from marketsim.simulator.simulator import Simulator
-from marketsim.agent.zero_intelligence_agent import ZIAgent
-from marketsim.agent.tron_agent import TRONAgent
+from marketsim.agent.tron_agent import TRONPolicy
+from marketsim.wrappers.tron_env import TRONEnv
 
 # ---------------------------------------------------------------------------
 # Strategy / environment constants (inlined from equilibrium_experiment.py)
@@ -73,119 +73,77 @@ ENV = {
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "runs/tron_v1/best_model.pt"
-DEFAULT_RUNS  = 1000
-TRON_LABEL    = "TRON-R2D2"
-NORMALIZERS   = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
-BASELINE_CSV  = "equilibrium_results.csv"
+DEFAULT_MODEL   = "runs/tron_v1/best_model.pt"
+DEFAULT_RUNS    = 500
+DEFAULT_N_BG    = 24          # paper uses N=25 total (24 ZI + 1 deviator)
+DEFAULT_LAM_ZI  = 0.02        # must match train_tron.py lam_zi
+TRON_LABEL      = "TRON-R2D2"
+NORMALIZERS     = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
+BASELINE_CSV    = "equilibrium_results.csv"
 
 
 # ---------------------------------------------------------------------------
-# TRONDeviator — thin subclass that loads weights and uses TRONAgent.take_action()
-# ---------------------------------------------------------------------------
-
-class TRONDeviator(TRONAgent):
-    """TRON agent pre-loaded with trained weights for use as a deviator.
-
-    Inherits TRONAgent entirely — take_action() and build_obs() are unchanged.
-    Weights are loaded from weights_path at construction time.
-
-    Args:
-        agent_id:     Unique integer identifier.
-        market:       The shared Market object.
-        q_max:        Maximum absolute inventory position.
-        pv_var:       Variance of private value draws.
-        normalizers:  Feature normalisation dict.
-        weights_path: Path to TRONPolicy state_dict (.pt).
-    """
-
-    def __init__(
-        self,
-        agent_id: int,
-        market,
-        q_max: int,
-        pv_var: float,
-        normalizers: dict,
-        weights_path: str,
-    ):
-        super().__init__(
-            agent_id=agent_id,
-            market=market,
-            q_max=q_max,
-            pv_var=pv_var,
-            shade=[250, 500],   # dummy — not used in take_action()
-            normalizers=normalizers,
-            weights_path=weights_path,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Worker function (runs in a subprocess — loads policy locally)
+# Worker: TRONEnv rollout (matches training environment exactly)
 # ---------------------------------------------------------------------------
 
 def _run_tron_cell(args):
-    """Run num_runs simulations with TRON deviator vs one ZI background strategy.
+    """Run num_runs TRONEnv episodes with TRON vs one fixed ZI background strategy.
 
-    The policy weights are loaded inside the worker to avoid pickle/multiprocessing
-    issues with PyTorch objects.
+    Uses TRONEnv (matching the training environment exactly) rather than the raw
+    Simulator, ensuring lam_zi and n_bg are identical between training and evaluation.
+    Profit = sum(episode_rewards) * reward_normalizer, which equals the terminal
+    mark-to-market PnL (same quantity as the raw-Simulator approach).
 
     Args:
-        args: (bg_idx, weights_path, num_runs)
+        args: (bg_idx, weights_path, num_runs, n_bg, lam_zi)
 
     Returns:
         (bg_idx, mean_deviator_profit)
     """
-    bg_idx, weights_path, num_runs = args
+    bg_idx, weights_path, num_runs, n_bg, lam_zi = args
 
     bg = STRATEGIES[bg_idx]
+    reward_norm = NORMALIZERS["reward"]
+
+    policy = TRONPolicy(input_dim=14)
+    policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
+    policy.eval()
+
+    env = TRONEnv(
+        num_background_agents=n_bg,
+        sim_time=ENV["sim_time"],
+        lam=ENV["lam"],
+        lam_zi=lam_zi,
+        mean=ENV["mean"],
+        r=ENV["r"],
+        shock_var=ENV["shock_var"],
+        q_max=ENV["q_max"],
+        pv_var=ENV["pv_var"],
+        shade=[250, 500],
+        normalizers=NORMALIZERS,
+        bg_strategies=[{'shade': bg['shade'], 'eta': bg['eta']}],
+        warmup_fraction=0.0,
+    )
+
     dev_profits = []
-
     for _ in range(num_runs):
-        sim = Simulator(
-            num_background_agents=0,
-            sim_time=ENV["sim_time"],
-            num_assets=1,
-            lam=ENV["lam"],
-            mean=ENV["mean"],
-            r=ENV["r"],
-            shock_var=ENV["shock_var"],
-            q_max=ENV["q_max"],
-            pv_var=ENV["pv_var"],
-        )
-        sim.agents = {}
-
-        # Deviator: TRON agent with pre-trained weights
-        tron = TRONDeviator(
-            agent_id=0,
-            market=sim.markets[0],
-            q_max=ENV["q_max"],
-            pv_var=ENV["pv_var"],
-            normalizers=NORMALIZERS,
-            weights_path=weights_path,
-        )
-        sim.agents[0] = tron
-
-        # Background agents: all play the fixed ZI strategy
-        for i in range(1, ENV["n_bg"] + 1):
-            sim.agents[i] = ZIAgent(
-                agent_id=i,
-                market=sim.markets[0],
-                q_max=ENV["q_max"],
-                shade=bg["shade"],
-                eta=bg["eta"],
-                pv_var=ENV["pv_var"],
+        obs, _ = env.reset()
+        h = torch.zeros(1, 1, policy.hidden_dim)
+        c = torch.zeros(1, 1, policy.hidden_dim)
+        ep_reward = 0.0
+        done = False
+        while not done:
+            obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+            with torch.no_grad():
+                Q_shade, Q_eta, (h, c) = policy(obs_t, (h, c))
+            shade_idx = int(Q_shade.argmax(dim=-1).item())
+            eta_idx   = int(Q_eta.argmax(dim=-1).item())
+            obs, r, terminated, truncated, _ = env.step(
+                np.array([shade_idx, eta_idx])
             )
-
-        sim.run()
-
-        fv  = sim.markets[0].get_final_fundamental()
-        dev = sim.agents[0]
-        dev_profits.append(dev.get_pos_value() + dev.position * fv + dev.cash)
-
-        # Reset TRON LSTM state between runs (position/cash reset handled by
-        # constructing a new object per run, so this is a no-op here, but
-        # included for clarity if the loop is ever refactored to reuse objects)
-        tron.reset()
+            ep_reward += r
+            done = terminated or truncated
+        dev_profits.append(ep_reward * reward_norm)
 
     return bg_idx, float(np.mean(dev_profits))
 
@@ -198,33 +156,35 @@ def run_tron_column(
     weights_path: str,
     num_runs: int = DEFAULT_RUNS,
     n_processes: int = None,
+    lam_zi: float = DEFAULT_LAM_ZI,
 ) -> np.ndarray:
-    """Run num_runs sims for each of the 10 ZI background strategies.
+    """Run num_runs TRONEnv episodes for each of the 10 ZI background strategies.
 
     Returns:
         tron_column: float array of shape (10,) — mean TRON deviator profit
                      for each ZI background strategy.
     """
-    n_bg = len(STRATEGIES)
-    tasks = [(bg, weights_path, num_runs) for bg in range(n_bg)]
+    n_strats = len(STRATEGIES)
+    n_bg = ENV['n_bg']
+    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi) for bg in range(n_strats)]
 
     if n_processes is None:
-        n_processes = min(mp.cpu_count(), n_bg)
+        n_processes = min(mp.cpu_count(), n_strats)
 
-    tron_column = np.zeros(n_bg)
+    tron_column = np.zeros(n_strats)
 
-    total_sims = n_bg * num_runs
+    total_sims = n_strats * num_runs
     print(
-        f"TRON deviator column:  {n_bg} cells  |  {num_runs} runs/cell  |  "
+        f"TRON deviator column:  {n_strats} cells  |  {num_runs} runs/cell  |  "
         f"{total_sims:,} total simulations  |  {n_processes} processes"
     )
     print(f"  Model: {weights_path}")
-    print(f"  Equilibrium ENV: lam={ENV['lam']}, sim_time={ENV['sim_time']}, r={ENV['r']}.\n")
+    print(f"  ENV: lam={ENV['lam']}, lam_zi={lam_zi}, sim_time={ENV['sim_time']}, n_bg={n_bg}.\n")
 
     with mp.Pool(n_processes) as pool:
         for bg_idx, tron_mean in tqdm(
             pool.imap_unordered(_run_tron_cell, tasks),
-            total=n_bg,
+            total=n_strats,
             desc="TRON cells completed",
         ):
             tron_column[bg_idx] = tron_mean
@@ -343,15 +303,29 @@ def parse_args():
         "--output", default="equilibrium_tron_results.csv",
         help="Output CSV path (default: equilibrium_tron_results.csv)",
     )
+    p.add_argument(
+        "--n-bg", type=int, default=DEFAULT_N_BG,
+        help=f"Background agents per simulation (default: {DEFAULT_N_BG})",
+    )
+    p.add_argument(
+        "--baseline", default=BASELINE_CSV,
+        help=f"ZI×ZI baseline CSV path (default: {BASELINE_CSV})",
+    )
+    p.add_argument(
+        "--lam-zi", type=float, default=DEFAULT_LAM_ZI,
+        help=f"RL agent arrival rate — must match training lam_zi (default: {DEFAULT_LAM_ZI})",
+    )
     return p.parse_args()
 
 
 def main():
     args = parse_args()
 
+    ENV['n_bg'] = args.n_bg
+
     # ── Load ZI×ZI baseline ───────────────────────────────────────────────
-    print(f"Loading ZI×ZI baseline from {BASELINE_CSV} ...")
-    zi_df = pd.read_csv(BASELINE_CSV, index_col=0)
+    print(f"Loading ZI×ZI baseline from {args.baseline} ...")
+    zi_df = pd.read_csv(args.baseline, index_col=0)
     print(f"  Loaded {zi_df.shape[0]}×{zi_df.shape[1]} matrix.\n")
 
     # ── Run TRON deviator column ──────────────────────────────────────────
@@ -359,6 +333,7 @@ def main():
         weights_path=args.model,
         num_runs=args.num_runs,
         n_processes=args.processes,
+        lam_zi=args.lam_zi,
     )
 
     # ── Display extended results ──────────────────────────────────────────

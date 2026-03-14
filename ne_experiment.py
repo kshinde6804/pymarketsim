@@ -99,7 +99,7 @@ def _run_cell(args):
     Returns:
         (bg_idx, dev_idx, mean_rel, std_rel, mean_abs, std_abs)
     """
-    bg_idx, dev_idx, num_runs, base_seed = args
+    bg_idx, dev_idx, num_runs, base_seed, n_bg = args
     bg  = STRATEGIES[bg_idx]
     dev = STRATEGIES[dev_idx]
 
@@ -139,7 +139,7 @@ def _run_cell(args):
         )
 
         # Background agents 1..n_bg
-        for i in range(1, ENV['n_bg'] + 1):
+        for i in range(1, n_bg + 1):
             sim.agents[i] = ZIAgent(
                 agent_id=i,
                 market=sim.markets[0],
@@ -161,7 +161,7 @@ def _run_cell(args):
             return agent.get_pos_value() + agent.position * fv + agent.cash
 
         dev_profit = profit(sim.agents[0])
-        bg_profits  = [profit(sim.agents[i]) for i in range(1, ENV['n_bg'] + 1)]
+        bg_profits  = [profit(sim.agents[i]) for i in range(1, n_bg + 1)]
         mean_bg     = float(np.mean(bg_profits))
 
         abs_dev_profits.append(dev_profit)
@@ -190,7 +190,8 @@ def run_ne_experiment(num_runs=NUM_RUNS, n_processes=None, base_seed=BASE_SEED):
         'abs_se'   : standard error of absolute deviator profit
     """
     n = len(STRATEGIES)
-    tasks = [(bg, dev, num_runs, base_seed) for bg in range(n) for dev in range(n)]
+    n_bg = ENV['n_bg']
+    tasks = [(bg, dev, num_runs, base_seed, n_bg) for bg in range(n) for dev in range(n)]
 
     if n_processes is None:
         n_processes = min(mp.cpu_count(), len(tasks))
@@ -204,7 +205,7 @@ def run_ne_experiment(num_runs=NUM_RUNS, n_processes=None, base_seed=BASE_SEED):
     print(
         f"\nStrategy matrix: {n}×{n} cells  |  {num_runs} runs/cell  |  "
         f"{total_sims:,} total simulations  |  {n_processes} processes  |  "
-        f"base_seed={base_seed}"
+        f"base_seed={base_seed}  |  n_bg={n_bg}"
     )
 
     with mp.Pool(n_processes) as pool:
@@ -446,7 +447,11 @@ def main():
                         help=f"t-stat threshold for NE candidacy (default: {EPSILON_MULTIPLE})")
     parser.add_argument("--prefix",     type=str,   default="ne",
                         help="Output CSV filename prefix (default: 'ne')")
+    parser.add_argument("--n-bg",       type=int,   default=ENV['n_bg'],
+                        help=f"Number of background agents (default: {ENV['n_bg']})")
     args = parser.parse_args()
+
+    ENV['n_bg'] = args.n_bg
 
     results = run_ne_experiment(
         num_runs   = args.num_runs,

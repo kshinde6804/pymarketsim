@@ -40,25 +40,13 @@ class OrderQueue:
     #     return self.order_dict[order_id]
 
     def peek(self) -> float:
-        c = -1 if self.is_max_heap else 1
-        # Return infinity if empty
-        if self.is_empty() or len(self.heap) == 0:
-            return c*math.inf
-        
-        # Clean up deleted orders
-        try:
-            while len(self.heap) > 0 and self.heap[0][1] in self.deleted_ids:
-                heapq.heappop(self.heap)
-                if len(self.heap) == 0:
-                    return c*math.inf
-        except IndexError:
-            return c*math.inf
-        
-        # If we get here, heap should have at least one valid element
-        if len(self.heap) == 0:
-            return c*math.inf
-        
-        return c*self.heap[0][0]
+        heap = self.heap
+        deleted = self.deleted_ids
+        while heap and heap[0][1] in deleted:
+            heapq.heappop(heap)
+        if not heap:
+            return (-1 if self.is_max_heap else 1) * math.inf
+        return (-1 if self.is_max_heap else 1) * heap[0][0]
 
     def peek_order(self) -> Order:
         if self.is_empty() or len(self.heap) == 0:

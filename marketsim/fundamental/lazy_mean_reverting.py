@@ -33,15 +33,20 @@ class LazyGaussianMeanReverting(Fundamental):
             t (int): The time step to generate the value for.
         """
         dt = t - self.latest_t
+        prev = self.fundamental_values[self.latest_t]
 
-        shocks = np.random.randn(dt) * self.shock_std + self.shock_mean
-        weights = np.power(self._one_minus_r, np.arange(dt, dtype=np.float64))
-        total_shock = np.sum(weights * shocks)
-        value_at_t = (
-                np.power(self._one_minus_r, dt) * self.fundamental_values[self.latest_t] +
-                self.r * self.mean * np.sum(weights) +
-                total_shock
-        )
+        if dt == 1:
+            shock = np.random.randn() * self.shock_std + self.shock_mean
+            value_at_t = self._one_minus_r * prev + self.r * self.mean + shock
+        else:
+            shocks = np.random.randn(dt) * self.shock_std + self.shock_mean
+            weights = np.power(self._one_minus_r, np.arange(dt, dtype=np.float64))
+            total_shock = float(np.dot(weights, shocks))
+            value_at_t = (
+                np.power(self._one_minus_r, dt) * prev
+                + self.r * self.mean * float(np.sum(weights))
+                + total_shock
+            )
 
         self.fundamental_values[t] = float(value_at_t)
         self.latest_t = t
