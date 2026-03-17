@@ -2,6 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: Running Long-Running Processes
+
+**ALL long-running Python commands (training, experiments, equilibrium runs) MUST be wrapped with `caffeinate` to prevent the process from being interrupted if the computer goes to sleep.**
+
+When running any of the following commands from the terminal, ALWAYS prefix them with `caffeinate -disu`:
+
+- `train_mlp.py` — SAC training (can take 25-40+ minutes)
+- `train_tron.py` — R2D2 training (can take hours)
+- `equilibrium_mlp.py` — Equilibrium experiments (hundreds/thousands of simulations)
+- `equilibrium_tron.py` — Equilibrium experiments (hundreds/thousands of simulations)
+- `experiments/NE_ZI-ZI/equilibrium_experiment.py` — Full 10×10 experiment (10,000+ simulations)
+
+**Example usage:**
+```bash
+# Instead of: python train_mlp.py --tag v1
+# Always use:
+caffeinate -disu python train_mlp.py --tag v1
+
+# Instead of: python equilibrium_tron.py --num-runs 500
+# Always use:
+caffeinate -disu python equilibrium_tron.py --num-runs 500
+```
+
+The `caffeinate` flags:
+- `-d` prevents the display from sleeping
+- `-i` prevents the system from idle sleeping
+- `-s` prevents the system from sleeping (works when on AC power)
+- `-u` prevents the system from sleeping when on battery
+
+This ensures that if the user's computer goes to sleep during a long-running task, the process will continue running uninterrupted.
+
 ## Setup
 
 ```bash
@@ -175,25 +206,29 @@ ENV = {'lam': 0.005, 'mean': 1e5, 'r': 0.01, 'shock_var': 1e6,
 
 ### Training
 
+**IMPORTANT:** All training commands MUST be run with `caffeinate -disu` to prevent sleep interruptions.
+
 ```bash
 # SAC MLP agent (stable-baselines3)
-python train_mlp.py                                        # 1M steps, 4 envs
-python train_mlp.py --n-envs 4 --timesteps 500000 --tag v2
-python train_mlp.py --eval-only --load runs/sac_zi_v1/best_model
+caffeinate -disu python train_mlp.py                                        # 1M steps, 4 envs
+caffeinate -disu python train_mlp.py --n-envs 4 --timesteps 500000 --tag v2
+caffeinate -disu python train_mlp.py --eval-only --load runs/sac_zi_v1/best_model
 
 # TRON agent (custom R2D2)
-python train_tron.py                                       # 2M steps
-python train_tron.py --timesteps 5000 --tag smoke
-python train_tron.py --eval-only --load runs/tron_v1/best_model.pt
+caffeinate -disu python train_tron.py                                       # 2M steps
+caffeinate -disu python train_tron.py --timesteps 5000 --tag smoke
+caffeinate -disu python train_tron.py --eval-only --load runs/tron_v1/best_model.pt
 ```
 
 SAC outputs go to `runs/sac_zi_<tag>/` (SB3 `.zip`). R2D2 outputs go to `runs/tron_<tag>/` (PyTorch `.pt`).
 
 ### Equilibrium Evaluation
 
+**IMPORTANT:** All equilibrium commands MUST be run with `caffeinate -disu` to prevent sleep interruptions.
+
 ```bash
-python equilibrium_mlp.py --model runs/sac_zi_v3_eq/best_model --num-runs 500
-python equilibrium_tron.py --model runs/tron_v1/best_model.pt --num-runs 500
+caffeinate -disu python equilibrium_mlp.py --model runs/sac_zi_v3_eq/best_model --num-runs 500
+caffeinate -disu python equilibrium_tron.py --model runs/tron_v1/best_model.pt --num-runs 500
 ```
 
 Both load ZI×ZI baseline from `equilibrium_results.csv` and add a new deviator column.
