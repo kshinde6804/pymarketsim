@@ -80,7 +80,7 @@ DEFAULT_N_BG    = 24
 DEFAULT_LAM_ZI  = 0.02
 TRONFORMER_LABEL = "TRONformer"
 NORMALIZERS      = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
-BASELINE_CSV     = "equilibrium_results.csv"
+BASELINE_CSV     = "results/equilibrium/equilibrium_results.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -309,8 +309,8 @@ def parse_args():
         help="Worker processes (default: cpu_count)",
     )
     p.add_argument(
-        "--output", default="equilibrium_tronformer_results.csv",
-        help="Output CSV path (default: equilibrium_tronformer_results.csv)",
+        "--output", default="results/equilibrium/equilibrium_tronformer_results.csv",
+        help="Output CSV path (default: results/equilibrium/equilibrium_tronformer_results.csv)",
     )
     p.add_argument(
         "--n-bg", type=int, default=DEFAULT_N_BG,

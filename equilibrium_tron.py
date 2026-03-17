@@ -79,7 +79,7 @@ DEFAULT_N_BG    = 24          # paper uses N=25 total (24 ZI + 1 deviator)
 DEFAULT_LAM_ZI  = 0.02        # must match train_tron.py lam_zi
 TRON_LABEL      = "TRON-R2D2"
 NORMALIZERS     = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
-BASELINE_CSV    = "equilibrium_results.csv"
+BASELINE_CSV    = "results/equilibrium/equilibrium_results.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +300,8 @@ def parse_args():
         help="Worker processes (default: cpu_count)",
     )
     p.add_argument(
-        "--output", default="equilibrium_tron_results.csv",
-        help="Output CSV path (default: equilibrium_tron_results.csv)",
+        "--output", default="results/equilibrium/equilibrium_tron_results.csv",
+        help="Output CSV path (default: results/equilibrium/equilibrium_tron_results.csv)",
     )
     p.add_argument(
         "--n-bg", type=int, default=DEFAULT_N_BG,

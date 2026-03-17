@@ -91,7 +91,7 @@ MLP_LABEL      = "MLP-SAC"
 MLP_COL        = 10          # column index in the extended matrix
 NORMALIZERS    = {"fundamental": 1e5, "invt": 10, "reward": 1e4, "pv": 5e5}
 SHADE_RANGE    = [0, 600]    # must match train_mlp.py shade_range
-BASELINE_CSV   = "equilibrium_results.csv"
+BASELINE_CSV   = "results/equilibrium/equilibrium_results.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -411,8 +411,8 @@ def parse_args():
                    help=f"Simulations per MLP-deviator cell (default: {DEFAULT_RUNS})")
     p.add_argument("--processes", type=int, default=None,
                    help="Worker processes (default: cpu_count)")
-    p.add_argument("--output", default="equilibrium_mlp_results.csv",
-                   help="Output CSV path (default: equilibrium_mlp_results.csv)")
+    p.add_argument("--output", default="results/equilibrium/equilibrium_mlp_results.csv",
+                   help="Output CSV path (default: results/equilibrium/equilibrium_mlp_results.csv)")
     return p.parse_args()
 
 

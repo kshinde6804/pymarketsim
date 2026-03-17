@@ -417,6 +417,10 @@ def _print_matrix(mean_df: pd.DataFrame, se_df: pd.DataFrame,
 
 def save_results(results: dict, ne_df: pd.DataFrame, prefix: str = "ne") -> None:
     """Save five CSV files: rel_mean, rel_se, abs_mean, abs_se, ne_summary."""
+    import os
+    outdir = os.path.dirname(prefix)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
     files = {
         f"{prefix}_rel_mean.csv": results['rel_mean'],
         f"{prefix}_rel_se.csv":   results['rel_se'],
@@ -445,8 +449,8 @@ def main():
                         help=f"Base random seed (default: {BASE_SEED})")
     parser.add_argument("--epsilon",    type=float, default=EPSILON_MULTIPLE,
                         help=f"t-stat threshold for NE candidacy (default: {EPSILON_MULTIPLE})")
-    parser.add_argument("--prefix",     type=str,   default="ne",
-                        help="Output CSV filename prefix (default: 'ne')")
+    parser.add_argument("--prefix",     type=str,   default="results/ne_search/ne",
+                        help="Output CSV filename prefix (default: 'results/ne_search/ne')")
     parser.add_argument("--n-bg",       type=int,   default=ENV['n_bg'],
                         help=f"Number of background agents (default: {ENV['n_bg']})")
     args = parser.parse_args()
