@@ -341,6 +341,7 @@ class R2D2FormerTrainer:
     Args:
         obs_dim:            Observation dimension (14).
         d_model:            Transformer hidden size (128).
+        n_layers:           Number of Pre-LN transformer blocks (default 1).
         seq_len:            Sequence length for rolling buffer.
         burnin:             Steps to skip when computing loss (causal context).
         lr:                 Adam learning rate for the policy.
@@ -351,12 +352,16 @@ class R2D2FormerTrainer:
         eps_start/end/decay_steps: Epsilon-greedy schedule.
         grad_clip:          Max gradient norm.
         shade_bins:         Optional custom shade bins.
+        boltzmann:          Use Boltzmann (softmax) exploration instead of epsilon-greedy.
+        tau_start:          Initial temperature for Boltzmann exploration.
+        tau_end:            Final temperature for Boltzmann exploration.
     """
 
     def __init__(
         self,
         obs_dim: int = 14,
         d_model: int = 128,
+        n_layers: int = 1,
         seq_len: int = SEQ_LEN,
         burnin: int = BURNIN,
         lr: float = LR,
@@ -369,6 +374,9 @@ class R2D2FormerTrainer:
         eps_decay_steps: int = EPS_DECAY_STEPS,
         grad_clip: float = GRAD_CLIP,
         shade_bins: Optional[np.ndarray] = None,
+        boltzmann: bool = False,
+        tau_start: float = 2.0,
+        tau_end: float = 0.1,
     ):
         self.gamma = gamma
         self.n_step = n_step
@@ -380,9 +388,12 @@ class R2D2FormerTrainer:
         self.eps_end = eps_end
         self.eps_decay_steps = eps_decay_steps
         self.grad_clip = grad_clip
+        self.boltzmann = boltzmann
+        self.tau_start = tau_start
+        self.tau_end = tau_end
 
-        self.online = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, shade_bins=shade_bins)
-        self.target = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, shade_bins=shade_bins)
+        self.online = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins)
+        self.target = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
 
@@ -405,15 +416,22 @@ class R2D2FormerTrainer:
         frac = min(1.0, self._env_steps / self.eps_decay_steps)
         return self.eps_start + frac * (self.eps_end - self.eps_start)
 
+    @property
+    def tau(self) -> float:
+        """Current Boltzmann temperature (linearly decayed from tau_start to tau_end)."""
+        frac = min(1.0, self._env_steps / self.eps_decay_steps)
+        return self.tau_start + frac * (self.tau_end - self.tau_start)
+
     def reset_obs_buffer(self):
         """Clear the rolling obs buffer (call at episode start)."""
         self._obs_deque.clear()
 
     def select_action(self, obs: np.ndarray) -> np.ndarray:
-        """Epsilon-greedy action selection using the rolling obs buffer.
+        """Action selection using the rolling obs buffer.
 
-        Appends obs to the internal deque, stacks to a sequence, and queries
-        the online policy at the last position.
+        Uses Boltzmann (temperature-scaled softmax) if self.boltzmann=True,
+        otherwise epsilon-greedy. Appends obs to the internal deque, stacks
+        to a sequence, and queries the online policy at the last position.
 
         Args:
             obs: (obs_dim,) numpy array — current observation.
@@ -428,7 +446,13 @@ class R2D2FormerTrainer:
         with torch.no_grad():
             Q_shade, Q_eta = self.online(obs_t)  # (1, cur_len, ...)
 
-        if random.random() < self.epsilon:
+        if self.boltzmann:
+            t = self.tau
+            shade_probs = torch.softmax(Q_shade[0, -1, :] / t, dim=-1)
+            eta_probs = torch.softmax(Q_eta[0, -1, :] / t, dim=-1)
+            shade_idx = int(torch.multinomial(shade_probs, 1).item())
+            eta_idx = int(torch.multinomial(eta_probs, 1).item())
+        elif random.random() < self.epsilon:
             shade_idx = random.randrange(len(self.online.SHADE_BINS))
             eta_idx = random.randrange(len(self.online.ETA_BINS))
         else:
@@ -704,11 +728,18 @@ def train(args):
     trainer   = R2D2FormerTrainer(
         obs_dim=14,
         d_model=d_model,
+        n_layers=args.n_layers,
         seq_len=seq_len,
         burnin=burnin,
+        lr=args.lr,
+        n_step=args.n_step,
         batch_size=batch_sz,
+        eps_end=args.eps_end,
         shade_bins=shade_bins,
         eps_decay_steps=args.eps_decay_steps,
+        boltzmann=args.boltzmann,
+        tau_start=args.tau_start,
+        tau_end=args.tau_end,
     )
     buffer    = TronformerReplayBuffer(seq_len=seq_len)
     collector = TronformerCollector(seq_len=seq_len)
@@ -733,8 +764,12 @@ def train(args):
     losses: list = []
 
     print(f"\nTraining TRONformer (R2D2) for {total_steps:,} steps")
-    print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={N_STEP}")
-    print(f"  d_model={d_model}, shade_bins={len(shade_bins)}")
+    print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={args.n_step}")
+    print(f"  d_model={d_model}, n_layers={args.n_layers}, shade_bins={len(shade_bins)}")
+    if args.boltzmann:
+        print(f"  exploration=Boltzmann(tau={args.tau_start}→{args.tau_end})")
+    else:
+        print(f"  exploration=eps-greedy(eps_end={args.eps_end})")
     print(f"  eps_decay_steps={args.eps_decay_steps}, train_freq={TRAIN_FREQ}")
     print(f"  buffer_capacity={BUFFER_CAPACITY}, reward_model=disabled")
     print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, "
@@ -813,7 +848,7 @@ def eval_only(args):
     assert args.load, "--eval-only requires --load <path>"
     shade_bins = ENV_KWARGS.get("shade_bins", UNIFORM_SHADE_BINS)
     print(f"Loading {args.load}")
-    policy = TRONformerPolicy(input_dim=14, d_model=args.d_model, shade_bins=shade_bins)
+    policy = TRONformerPolicy(input_dim=14, d_model=args.d_model, n_layers=args.n_layers, shade_bins=shade_bins)
     policy.load_state_dict(torch.load(args.load, map_location="cpu"))
     policy.eval()
 
@@ -861,6 +896,20 @@ def parse_args():
                    help="Global random seed (default 42)")
     p.add_argument("--sim-time", type=int, default=None,
                    help="Override sim_time in ENV_KWARGS (default: use ENV_KWARGS value)")
+    p.add_argument("--lr", type=float, default=LR,
+                   help=f"Adam learning rate (default {LR})")
+    p.add_argument("--n-layers", type=int, default=1,
+                   help="Number of Pre-LN transformer blocks (default 1)")
+    p.add_argument("--n-step", type=int, default=N_STEP,
+                   help=f"n-step return horizon (default {N_STEP})")
+    p.add_argument("--eps-end", type=float, default=EPS_END,
+                   help=f"Final epsilon for epsilon-greedy (default {EPS_END})")
+    p.add_argument("--boltzmann", action="store_true",
+                   help="Use Boltzmann (softmax) exploration instead of epsilon-greedy")
+    p.add_argument("--tau-start", type=float, default=2.0,
+                   help="Initial temperature for Boltzmann exploration (default 2.0)")
+    p.add_argument("--tau-end", type=float, default=0.1,
+                   help="Final temperature for Boltzmann exploration (default 0.1)")
     return p.parse_args()
 
 

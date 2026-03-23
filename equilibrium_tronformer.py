@@ -30,6 +30,17 @@ from marketsim.agent.tronformer_agent import TRONformerPolicy, SEQ_LEN
 from marketsim.wrappers.tron_env import TRONEnv
 
 # ---------------------------------------------------------------------------
+# Shade bin options (must match train_tronformer.py)
+# ---------------------------------------------------------------------------
+
+UNIFORM_SHADE_BINS = np.linspace(0, 600, 42)
+
+SKEWED_SHADE_BINS = np.concatenate([
+    np.linspace(0, 300, 11)[:-1],
+    np.linspace(300, 600, 32),
+])
+
+# ---------------------------------------------------------------------------
 # Strategy / environment constants (inlined from equilibrium_experiment.py)
 # ---------------------------------------------------------------------------
 
@@ -91,25 +102,25 @@ def _run_tronformer_cell(args):
     """Run num_runs TRONEnv episodes with TRONformer vs one fixed ZI background.
 
     Uses TRONEnv (matching the training environment exactly).
-    Maintains a rolling obs_buffer (deque of maxlen SEQ_LEN) per rollout;
+    Maintains a rolling obs_buffer (deque of maxlen seq_len) per rollout;
     stacks to (1, len, 14) for each forward pass and takes Q at last position.
 
     Args:
-        args: (bg_idx, weights_path, num_runs, n_bg, lam_zi)
+        args: (bg_idx, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len)
 
     Returns:
         (bg_idx, mean_deviator_profit)
     """
-    bg_idx, weights_path, num_runs, n_bg, lam_zi = args
+    bg_idx, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins = args
 
     bg = STRATEGIES[bg_idx]
     reward_norm = NORMALIZERS["reward"]
 
-    policy = TRONformerPolicy(input_dim=14)
+    policy = TRONformerPolicy(input_dim=14, n_layers=n_layers, shade_bins=shade_bins)
     policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
     policy.eval()
 
-    env = TRONEnv(
+    env_kwargs = dict(
         num_background_agents=n_bg,
         sim_time=ENV["sim_time"],
         lam=ENV["lam"],
@@ -124,11 +135,14 @@ def _run_tronformer_cell(args):
         bg_strategies=[{'shade': bg['shade'], 'eta': bg['eta']}],
         warmup_fraction=0.0,
     )
+    if shade_bins is not None:
+        env_kwargs["shade_bins"] = shade_bins
+    env = TRONEnv(**env_kwargs)
 
     dev_profits = []
     for _ in range(num_runs):
         obs, _ = env.reset()
-        obs_buffer: collections.deque = collections.deque(maxlen=SEQ_LEN)
+        obs_buffer: collections.deque = collections.deque(maxlen=seq_len)
         ep_reward = 0.0
         done = False
 
@@ -165,6 +179,9 @@ def run_tronformer_column(
     num_runs: int = DEFAULT_RUNS,
     n_processes: int = None,
     lam_zi: float = DEFAULT_LAM_ZI,
+    n_layers: int = 1,
+    seq_len: int = SEQ_LEN,
+    shade_bins: np.ndarray = None,
 ) -> np.ndarray:
     """Run num_runs TRONEnv episodes for each of the 10 ZI background strategies.
 
@@ -174,7 +191,7 @@ def run_tronformer_column(
     """
     n_strats = len(STRATEGIES)
     n_bg = ENV['n_bg']
-    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi) for bg in range(n_strats)]
+    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins) for bg in range(n_strats)]
 
     if n_processes is None:
         n_processes = min(mp.cpu_count(), n_strats)
@@ -324,6 +341,18 @@ def parse_args():
         "--lam-zi", type=float, default=DEFAULT_LAM_ZI,
         help=f"RL agent arrival rate (default: {DEFAULT_LAM_ZI})",
     )
+    p.add_argument(
+        "--n-layers", type=int, default=1,
+        help="Number of Pre-LN transformer blocks in the loaded model (default: 1)",
+    )
+    p.add_argument(
+        "--seq-len", type=int, default=SEQ_LEN,
+        help=f"Rolling context window used during evaluation (default: {SEQ_LEN})",
+    )
+    p.add_argument(
+        "--skew-bins", action="store_true",
+        help="Use skewed shade bins (must match how the model was trained)",
+    )
     return p.parse_args()
 
 
@@ -331,6 +360,8 @@ def main():
     args = parse_args()
 
     ENV['n_bg'] = args.n_bg
+
+    shade_bins = SKEWED_SHADE_BINS if args.skew_bins else None
 
     # ── Load ZI×ZI baseline ───────────────────────────────────────────────
     print(f"Loading ZI×ZI baseline from {args.baseline} ...")
@@ -343,6 +374,9 @@ def main():
         num_runs=args.num_runs,
         n_processes=args.processes,
         lam_zi=args.lam_zi,
+        n_layers=args.n_layers,
+        seq_len=args.seq_len,
+        shade_bins=shade_bins,
     )
 
     # ── Display extended results ──────────────────────────────────────────
