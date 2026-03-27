@@ -4,7 +4,7 @@ train_tronformer.py — Train the TRONformer agent on TRONEnv using R2D2.
 R2D2 (Recurrent Replay Distributed DQN) adapted for a transformer backbone:
   - Dueling DQN architecture (TRONformerPolicy — Pre-LN transformer)
   - Rolling obs buffer stored in replay sequences (no LSTM h/c state)
-  - Fixed-length sequence replay (seq_len=32, burnin=4)
+  - Fixed-length sequence replay (seq_len=32)
   - n-step returns (n=5)
   - Double DQN target computation
   - Epsilon-greedy exploration with linear decay
@@ -45,6 +45,8 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from marketsim.agent.tronformer_agent import TRONformerPolicy, SEQ_LEN
 from marketsim.wrappers.tron_env import TRONEnv
@@ -89,7 +91,7 @@ ENV_KWARGS = dict(
     q_max=10,
     pv_var=5e6,
     shade=[250, 500],
-    normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e4, "pv": 5e5},
+    normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5},
     bg_strategies=BG_STRATEGIES,
     warmup_fraction=0.0,
     shade_bins=UNIFORM_SHADE_BINS,
@@ -97,10 +99,9 @@ ENV_KWARGS = dict(
 
 # ── R2D2 hyper-parameters ─────────────────────────────────────────────────────
 
-BURNIN = 8
 N_STEP = 5
 GAMMA = 0.99
-BATCH_SIZE = 128
+BATCH_SIZE = 512
 BUFFER_CAPACITY = 100_000
 LR = 1e-4
 TARGET_UPDATE_FREQ = 1000
@@ -164,17 +165,18 @@ class RewardModel(nn.Module):
 
 
 class TronformerReplayBuffer:
-    """Fixed-length sequence replay buffer for TRONformer (no LSTM state).
+    """Per-transition replay buffer for TRONformer CLS-based policy.
 
-    Each stored entry is a complete sequence of length seq_len:
-        obs_seq:  (seq_len, obs_dim)   float32
-        act_seq:  (seq_len, 2)         int64   [shade_idx, eta_idx]
-        rew_seq:  (seq_len,)           float32
-        done_seq: (seq_len,)           bool
+    Each stored entry is a single transition with n-step return:
+        obs_seq:      (seq_len, obs_dim)  float32  — rolling context at time t
+        action:       (2,)               int64    — [shade_idx, eta_idx]
+        nstep_return: scalar             float32  — n-step discounted return
+        next_obs_seq: (seq_len, obs_dim)  float32  — rolling context at time t+n
+        done:         bool               — episode ended within n-step horizon
 
     Args:
-        capacity: Maximum number of sequences stored.
-        seq_len:  Length of each stored sequence.
+        capacity: Maximum number of transitions stored.
+        seq_len:  Rolling context window length.
         obs_dim:  Observation dimensionality (14 for TRONformer).
     """
 
@@ -196,15 +198,17 @@ class TronformerReplayBuffer:
     def add(
         self,
         obs_seq: np.ndarray,
-        act_seq: np.ndarray,
-        rew_seq: np.ndarray,
-        done_seq: np.ndarray,
+        action: np.ndarray,
+        nstep_return: float,
+        next_obs_seq: np.ndarray,
+        done: bool,
     ):
         entry = (
             obs_seq.astype(np.float32),
-            act_seq.astype(np.int64),
-            rew_seq.astype(np.float32),
-            done_seq.astype(bool),
+            action.astype(np.int64),
+            float(nstep_return),
+            next_obs_seq.astype(np.float32),
+            bool(done),
         )
         if len(self._buf) < self.capacity:
             self._buf.append(entry)
@@ -213,120 +217,95 @@ class TronformerReplayBuffer:
         self._pos = (self._pos + 1) % self.capacity
 
     def sample(self, batch_size: int):
-        """Sample a batch of sequences uniformly at random.
+        """Sample a batch of transitions uniformly at random.
 
         Returns:
-            obs:   (batch, seq_len, obs_dim)  float32 tensor
-            acts:  (batch, seq_len, 2)        int64 tensor
-            rews:  (batch, seq_len)           float32 tensor
-            dones: (batch, seq_len)           bool tensor
+            obs:      (batch, seq_len, obs_dim)  float32 tensor
+            acts:     (batch, 2)                 int64 tensor
+            rews:     (batch,)                   float32 tensor
+            next_obs: (batch, seq_len, obs_dim)  float32 tensor
+            dones:    (batch,)                   bool tensor
         """
         indices = random.sample(range(len(self._buf)), batch_size)
         batch = [self._buf[i] for i in indices]
 
-        obs   = torch.tensor(np.stack([b[0] for b in batch]))
-        acts  = torch.tensor(np.stack([b[1] for b in batch]))
-        rews  = torch.tensor(np.stack([b[2] for b in batch]))
-        dones = torch.tensor(np.stack([b[3] for b in batch]))
+        obs      = torch.tensor(np.stack([b[0] for b in batch]))
+        acts     = torch.tensor(np.stack([b[1] for b in batch]))
+        rews     = torch.tensor([b[2] for b in batch], dtype=torch.float32)
+        next_obs = torch.tensor(np.stack([b[3] for b in batch]))
+        dones    = torch.tensor([b[4] for b in batch])
 
-        return obs, acts, rews, dones
-
-
-# ── Sequence Collector ────────────────────────────────────────────────────────
+        return obs, acts, rews, next_obs, dones
 
 
-class TronformerCollector:
-    """Collects transitions and packages them into fixed-length sequences.
+# ── N-step Transition Buffer ──────────────────────────────────────────────────
 
-    No LSTM state is stored — the transformer reprocesses the full sequence
-    from scratch during training.
+
+class NStepBuffer:
+    """Accumulates single-step transitions and emits n-step discounted returns.
+
+    At each step t, the caller adds (obs_seq_t, action_t, reward_t, done_t).
+    Once n transitions have accumulated, ``get(next_obs_seq)`` pops the oldest
+    and returns a complete (obs_seq_t, action_t, G_t, next_obs_seq, done_flag)
+    tuple where G_t = Σ_{k=0}^{n-1} γ^k r_{t+k} (sum stops early if done).
+
+    At episode end ``drain(done_obs_seq)`` flushes all remaining entries with
+    truncated returns and done=True (no bootstrapping beyond episode boundary).
 
     Args:
-        seq_len: Target sequence length.
-        obs_dim: Observation dimension.
+        n_step: n-step return horizon.
+        gamma:  Discount factor.
     """
 
-    def __init__(self, seq_len: int = SEQ_LEN, obs_dim: int = 14):
-        self.seq_len = seq_len
-        self.obs_dim = obs_dim
-        self._obs:  List[np.ndarray] = []
-        self._acts: List[np.ndarray] = []
-        self._rews: List[float] = []
-        self._done: List[bool] = []
+    def __init__(self, n_step: int, gamma: float):
+        self.n_step = n_step
+        self.gamma  = gamma
+        self._buf: List[tuple] = []  # (obs_seq, action, reward, done)
 
-    def add(self, obs: np.ndarray, action: np.ndarray, reward: float, done: bool):
-        self._obs.append(obs.astype(np.float32))
-        self._acts.append(np.array(action, dtype=np.int64))
-        self._rews.append(float(reward))
-        self._done.append(bool(done))
+    def __len__(self) -> int:
+        return len(self._buf)
 
-    def ready(self) -> bool:
-        return len(self._obs) >= self.seq_len
+    def add(self, obs_seq: np.ndarray, action: np.ndarray, reward: float, done: bool):
+        self._buf.append((obs_seq.astype(np.float32), action.copy(), float(reward), bool(done)))
 
-    def flush(self, pad_if_short: bool = False) -> Optional[tuple]:
-        """Return a complete sequence if ready, or None.
+    def get(self, next_obs_seq: np.ndarray) -> tuple:
+        """Pop oldest entry and return its n-step transition.
 
         Args:
-            pad_if_short: If True, pad short sequences with zeros to seq_len.
+            next_obs_seq: Rolling obs context at time t+n (bootstrap state).
         """
-        n = len(self._obs)
-        if n == 0:
-            return None
-        if n < self.seq_len and not pad_if_short:
-            return None
-
-        while len(self._obs) < self.seq_len:
-            self._obs.append(np.zeros(self.obs_dim, dtype=np.float32))
-            self._acts.append(np.zeros(2, dtype=np.int64))
-            self._rews.append(0.0)
-            self._done.append(True)
-
-        seq = (
-            np.stack(self._obs[:self.seq_len]),
-            np.stack(self._acts[:self.seq_len]),
-            np.array(self._rews[:self.seq_len]),
-            np.array(self._done[:self.seq_len]),
-        )
-        self._obs.clear()
-        self._acts.clear()
-        self._rews.clear()
-        self._done.clear()
-        return seq
-
-
-# ── n-step return helper ──────────────────────────────────────────────────────
-
-
-def compute_nstep_returns(
-    rews: torch.Tensor, dones: torch.Tensor, gamma: float, n: int
-) -> torch.Tensor:
-    """Compute n-step discounted returns for each time step in a sequence.
-
-    Args:
-        rews:  (batch, seq_len)  float32
-        dones: (batch, seq_len)  bool
-        gamma: Discount factor.
-        n:     n-step horizon.
-
-    Returns:
-        returns: (batch, seq_len)  float32
-    """
-    B, T = rews.shape
-    returns = torch.zeros_like(rews)
-    not_done = (~dones).float()
-
-    for t in range(T):
-        g = torch.zeros(B)
-        discount = torch.ones(B)
-        for k in range(n):
-            idx = t + k
-            if idx >= T:
+        assert len(self._buf) >= self.n_step, "Buffer not full yet"
+        nstep_return = 0.0
+        done_flag    = False
+        for k in range(self.n_step):
+            _, _, r, d = self._buf[k]
+            nstep_return += (self.gamma ** k) * r
+            if d:
+                done_flag = True
                 break
-            g = g + discount * rews[:, idx]
-            discount = discount * not_done[:, idx] * gamma
-        returns[:, t] = g
+        obs_t, act_t, _, _ = self._buf.pop(0)
+        return obs_t, act_t, nstep_return, next_obs_seq.astype(np.float32), done_flag
 
-    return returns
+    def drain(self, done_obs_seq: np.ndarray) -> List[tuple]:
+        """Flush all remaining transitions at episode end with truncated returns.
+
+        Sets done=True for all: the episode boundary prevents bootstrapping
+        regardless of how many rewards remain in the buffer.
+        """
+        results = []
+        while self._buf:
+            nstep_return = 0.0
+            for k in range(len(self._buf)):
+                _, _, r, d = self._buf[k]
+                nstep_return += (self.gamma ** k) * r
+                if d:
+                    break
+            obs_t, act_t, _, _ = self._buf.pop(0)
+            results.append((obs_t, act_t, nstep_return, done_obs_seq.astype(np.float32), True))
+        return results
+
+    def clear(self):
+        self._buf.clear()
 
 
 # ── R2D2 Trainer (TRONformer) ─────────────────────────────────────────────────
@@ -341,9 +320,8 @@ class R2D2FormerTrainer:
     Args:
         obs_dim:            Observation dimension (14).
         d_model:            Transformer hidden size (128).
-        n_layers:           Number of Pre-LN transformer blocks (default 1).
-        seq_len:            Sequence length for rolling buffer.
-        burnin:             Steps to skip when computing loss (causal context).
+        n_layers:           Number of Pre-LN transformer blocks (default 2).
+        seq_len:            Rolling context window length.
         lr:                 Adam learning rate for the policy.
         gamma:              Discount factor.
         n_step:             n-step return horizon.
@@ -361,9 +339,8 @@ class R2D2FormerTrainer:
         self,
         obs_dim: int = 14,
         d_model: int = 128,
-        n_layers: int = 1,
+        n_layers: int = 2,
         seq_len: int = SEQ_LEN,
-        burnin: int = BURNIN,
         lr: float = LR,
         gamma: float = GAMMA,
         n_step: int = N_STEP,
@@ -377,11 +354,11 @@ class R2D2FormerTrainer:
         boltzmann: bool = False,
         tau_start: float = 2.0,
         tau_end: float = 0.1,
+        device: Optional[torch.device] = None,
     ):
         self.gamma = gamma
         self.n_step = n_step
         self.seq_len = seq_len
-        self.burnin = burnin
         self.batch_size = batch_size
         self.target_update_freq = target_update_freq
         self.eps_start = eps_start
@@ -391,19 +368,22 @@ class R2D2FormerTrainer:
         self.boltzmann = boltzmann
         self.tau_start = tau_start
         self.tau_end = tau_end
+        self.device = device or DEVICE
 
-        self.online = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins)
-        self.target = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins)
+        self.online = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins).to(self.device)
+        self.target = TRONformerPolicy(input_dim=obs_dim, d_model=d_model, n_layers=n_layers, shade_bins=shade_bins).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
 
         self.optimizer = optim.Adam(self.online.parameters(), lr=lr)
         self.loss_fn = nn.SmoothL1Loss()
+        self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
 
         # Reward model
-        self.reward_model = RewardModel(input_dim=RM_INPUT_DIM)
+        self.reward_model = RewardModel(input_dim=RM_INPUT_DIM).to(self.device)
         self.rm_optimizer = optim.Adam(self.reward_model.parameters(), lr=RM_LR)
         self.rm_loss_fn = nn.BCELoss()
+        self.rm_scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
 
         self._grad_steps = 0
         self._env_steps = 0
@@ -441,32 +421,35 @@ class R2D2FormerTrainer:
         """
         self._obs_deque.append(obs.astype(np.float32))
         obs_seq = np.stack(list(self._obs_deque))  # (cur_len, obs_dim)
-        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)  # (1, cur_len, D)
+        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, cur_len, D)
 
         with torch.no_grad():
             Q_shade, Q_eta = self.online(obs_t)  # (1, cur_len, ...)
 
+        # Q_shade / Q_eta are (1, n_bins) from CLS token
         if self.boltzmann:
             t = self.tau
-            shade_probs = torch.softmax(Q_shade[0, -1, :] / t, dim=-1)
-            eta_probs = torch.softmax(Q_eta[0, -1, :] / t, dim=-1)
+            shade_probs = torch.softmax(Q_shade[0, :] / t, dim=-1)
+            eta_probs   = torch.softmax(Q_eta[0, :]   / t, dim=-1)
             shade_idx = int(torch.multinomial(shade_probs, 1).item())
-            eta_idx = int(torch.multinomial(eta_probs, 1).item())
+            eta_idx   = int(torch.multinomial(eta_probs,   1).item())
         elif random.random() < self.epsilon:
             shade_idx = random.randrange(len(self.online.SHADE_BINS))
-            eta_idx = random.randrange(len(self.online.ETA_BINS))
+            eta_idx   = random.randrange(len(self.online.ETA_BINS))
         else:
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx = int(Q_eta[0, -1, :].argmax().item())
+            shade_idx = int(Q_shade[0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, :].argmax().item())
 
         self._env_steps += 1
         return np.array([shade_idx, eta_idx], dtype=np.int64)
 
     def update(self, buffer: TronformerReplayBuffer) -> Optional[float]:
-        """Sample a batch and perform one gradient step on the policy.
+        """Sample a batch of transitions and perform one Double-DQN gradient step.
 
-        For the transformer, the full sequence context is used (no separate
-        LSTM burnin forward pass).  Loss is computed on positions burnin..T-1.
+        Each stored transition carries a pre-computed n-step return G_t and a
+        bootstrap state (next_obs_seq) so training is a standard single-step
+        DQN update.  Q-values are derived from the CLS token — one value per
+        sequence, not one per timestep.
 
         Returns:
             loss (float) or None if not enough data.
@@ -474,87 +457,62 @@ class R2D2FormerTrainer:
         if len(buffer) < self.batch_size:
             return None
 
-        obs, acts, rews, dones = buffer.sample(self.batch_size)
-        # obs:   (B, T, D)
-        # acts:  (B, T, 2)
-        # rews:  (B, T)
-        # dones: (B, T)
+        obs, acts, rews, next_obs, dones = buffer.sample(self.batch_size)
+        # obs:      (B, T, obs_dim)
+        # acts:     (B, 2)
+        # rews:     (B,)   — n-step discounted return G_t
+        # next_obs: (B, T, obs_dim)
+        # dones:    (B,)   bool
+        obs      = obs.to(self.device)
+        acts     = acts.to(self.device)
+        rews     = rews.to(self.device)
+        next_obs = next_obs.to(self.device)
+        dones    = dones.to(self.device)
 
-        B, T, D = obs.shape
-        learn_len = T - self.burnin
-
-        # ── Online Q-values (full sequence, causal masking handles context) ──
+        # ── Online Q-values from CLS ───────────────────────────────────────
         self.online.train()
-        Q_shade_online, Q_eta_online = self.online(obs)  # (B, T, n_*)
+        with torch.autocast(device_type=self.device.type, enabled=(self.device.type == "cuda")):
+            Q_shade_online, Q_eta_online = self.online(obs)   # (B, n_shade), (B, n_eta)
 
-        # Gather Q for taken actions in the learning window
-        shade_taken = acts[:, self.burnin:, 0].long()  # (B, learn_len)
-        eta_taken   = acts[:, self.burnin:, 1].long()
+            shade_taken = acts[:, 0].long()   # (B,)
+            eta_taken   = acts[:, 1].long()
 
-        Q_shade_taken = Q_shade_online[:, self.burnin:, :].gather(
-            2, shade_taken.unsqueeze(-1)
-        ).squeeze(-1)
-        Q_eta_taken = Q_eta_online[:, self.burnin:, :].gather(
-            2, eta_taken.unsqueeze(-1)
-        ).squeeze(-1)
+            Q_shade_taken = Q_shade_online.gather(1, shade_taken.unsqueeze(1)).squeeze(1)  # (B,)
+            Q_eta_taken   = Q_eta_online.gather(1, eta_taken.unsqueeze(1)).squeeze(1)
 
-        # ── n-step returns ─────────────────────────────────────────────────
-        rews_learn  = rews[:, self.burnin:]    # (B, learn_len)
-        dones_learn = dones[:, self.burnin:]
-        n_returns = compute_nstep_returns(rews_learn, dones_learn, self.gamma, self.n_step)
+            # ── Double DQN targets ─────────────────────────────────────────────
+            with torch.no_grad():
+                Q_shade_next_on, Q_eta_next_on = self.online(next_obs)   # (B, n_*)
+                Q_shade_next_tg, Q_eta_next_tg = self.target(next_obs)
 
-        # ── Double DQN targets via full-context forward ────────────────────
-        with torch.no_grad():
-            # Target network: full sequence
-            Q_shade_tgt_full, Q_eta_tgt_full = self.target(obs)  # (B, T, n_*)
+                # Online selects action; target evaluates value
+                shade_next_act = Q_shade_next_on.argmax(dim=-1)  # (B,)
+                eta_next_act   = Q_eta_next_on.argmax(dim=-1)
 
-            gamma_n = self.gamma ** self.n_step
+                Q_shade_next = Q_shade_next_tg.gather(
+                    1, shade_next_act.unsqueeze(1)
+                ).squeeze(1)   # (B,)
+                Q_eta_next   = Q_eta_next_tg.gather(
+                    1, eta_next_act.unsqueeze(1)
+                ).squeeze(1)
 
-            # For each learning position t, the n-step bootstrap uses s_{t+n}
-            # which is at full-sequence index burnin + t + n_step.
-            # Positions where that index >= T use pure n-step returns (no bootstrap).
-            shade_target = n_returns.clone()
-            eta_target   = n_returns.clone()
+                not_done = (~dones).float()
+                gamma_n  = self.gamma ** self.n_step
 
-            next_full_indices = (
-                self.burnin + torch.arange(learn_len) + self.n_step
-            )  # (learn_len,)
-            valid = next_full_indices < T  # (learn_len,)
+                shade_target = rews + gamma_n * Q_shade_next * not_done   # (B,)
+                eta_target   = rews + gamma_n * Q_eta_next   * not_done
 
-            if valid.any():
-                valid_idx = next_full_indices[valid]  # (n_valid,)
-
-                # Double DQN: online selects action, target evaluates value
-                Q_shade_next_online_v = Q_shade_online[:, valid_idx, :].detach()
-                Q_eta_next_online_v   = Q_eta_online[:, valid_idx, :].detach()
-
-                shade_next_act = Q_shade_next_online_v.argmax(dim=-1)  # (B, n_valid)
-                eta_next_act   = Q_eta_next_online_v.argmax(dim=-1)
-
-                Q_shade_next_val = Q_shade_tgt_full[:, valid_idx, :].gather(
-                    2, shade_next_act.unsqueeze(-1)
-                ).squeeze(-1)  # (B, n_valid)
-                Q_eta_next_val = Q_eta_tgt_full[:, valid_idx, :].gather(
-                    2, eta_next_act.unsqueeze(-1)
-                ).squeeze(-1)
-
-                not_done = (~dones_learn[:, valid]).float()  # (B, n_valid)
-                shade_target[:, valid] = (
-                    n_returns[:, valid] + gamma_n * Q_shade_next_val * not_done
-                )
-                eta_target[:, valid] = (
-                    n_returns[:, valid] + gamma_n * Q_eta_next_val * not_done
-                )
-
-        # ── Loss ──────────────────────────────────────────────────────────
-        loss_shade = self.loss_fn(Q_shade_taken, shade_target.detach())
-        loss_eta   = self.loss_fn(Q_eta_taken,   eta_target.detach())
-        loss = loss_shade + loss_eta
+            # ── Loss ──────────────────────────────────────────────────────────
+            loss_shade = self.loss_fn(Q_shade_taken, shade_target.detach())
+            loss_eta   = self.loss_fn(Q_eta_taken,   eta_target.detach())
+            loss = loss_shade + loss_eta
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
         nn.utils.clip_grad_norm_(self.online.parameters(), self.grad_clip)
-        self.optimizer.step()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
         self._grad_steps += 1
         if self._grad_steps % self.target_update_freq == 0:
@@ -578,18 +536,20 @@ class R2D2FormerTrainer:
         indices = random.sample(range(len(rm_data)), RM_BATCH_SIZE)
         feats  = torch.tensor(
             np.stack([rm_data[i][0] for i in indices]), dtype=torch.float32
-        )
+        ).to(self.device)
         labels = torch.tensor(
             [float(rm_data[i][1]) for i in indices], dtype=torch.float32
-        )
+        ).to(self.device)
 
         self.reward_model.train()
-        preds = self.reward_model(feats)
-        rm_loss = self.rm_loss_fn(preds, labels)
+        with torch.autocast(device_type=self.device.type, enabled=(self.device.type == "cuda")):
+            preds = self.reward_model(feats)
+            rm_loss = self.rm_loss_fn(preds, labels)
 
         self.rm_optimizer.zero_grad()
-        rm_loss.backward()
-        self.rm_optimizer.step()
+        self.rm_scaler.scale(rm_loss).backward()
+        self.rm_scaler.step(self.rm_optimizer)
+        self.rm_scaler.update()
         self.reward_model.eval()
 
         return float(rm_loss.item())
@@ -605,7 +565,7 @@ class R2D2FormerTrainer:
             Scalar execution probability in [0, 1].
         """
         feat = np.concatenate([obs.astype(np.float32), [shade_norm]])
-        feat_t = torch.tensor(feat, dtype=torch.float32).unsqueeze(0)
+        feat_t = torch.tensor(feat, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             return float(self.reward_model(feat_t).item())
 
@@ -614,7 +574,7 @@ class R2D2FormerTrainer:
         print(f"  Saved model → {path}")
 
     def load(self, path: str):
-        state = torch.load(path, map_location="cpu")
+        state = torch.load(path, map_location=self.device)
         self.online.load_state_dict(state)
         self.target.load_state_dict(state)
         self.online.train()
@@ -628,17 +588,14 @@ def evaluate(
     policy: TRONformerPolicy,
     n_episodes: int = EVAL_EPISODES,
     seq_len: int = SEQ_LEN,
+    device: Optional[torch.device] = None,
 ) -> Tuple[float, float]:
     """Roll out the greedy policy deterministically.
-
-    Args:
-        seq_len: Rolling context window to use during eval. Must match the
-                 seq_len used during training so the obs sequence fed to the
-                 policy has the same structure.
 
     Returns:
         (mean_reward, std_reward) over n_episodes episodes.
     """
+    device = device or DEVICE
     policy.eval()
     env = TRONEnv(**ENV_KWARGS)
     rewards = []
@@ -652,11 +609,11 @@ def evaluate(
         while not done:
             obs_deque.append(obs.astype(np.float32))
             obs_seq = np.stack(list(obs_deque))
-            obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)
+            obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(device)
             with torch.no_grad():
-                Q_shade, Q_eta = policy(obs_t)
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
+                Q_shade, Q_eta = policy(obs_t)   # (1, n_bins) from CLS
+            shade_idx = int(Q_shade[0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, :].argmax().item())
             action = np.array([shade_idx, eta_idx])
             obs, r, terminated, truncated, _ = env.step(action)
             ep_reward += r
@@ -716,21 +673,21 @@ def train(args):
     os.makedirs(run_dir, exist_ok=True)
     print(f"\nRun directory: {run_dir}")
 
+    device = DEVICE
+    print(f"Device: {device}")
+
     seq_len  = args.seq_len
-    burnin   = args.burnin
-    batch_sz = args.batch_size
-    d_model  = args.d_model
+    batch_sz    = args.batch_size
+    d_model     = args.d_model
     total_steps = args.timesteps
-    reward_norm = ENV_KWARGS["normalizers"]["reward"]
 
     shade_bins = ENV_KWARGS.get("shade_bins", UNIFORM_SHADE_BINS)
 
-    trainer   = R2D2FormerTrainer(
+    trainer  = R2D2FormerTrainer(
         obs_dim=14,
         d_model=d_model,
         n_layers=args.n_layers,
         seq_len=seq_len,
-        burnin=burnin,
         lr=args.lr,
         n_step=args.n_step,
         batch_size=batch_sz,
@@ -740,15 +697,16 @@ def train(args):
         boltzmann=args.boltzmann,
         tau_start=args.tau_start,
         tau_end=args.tau_end,
+        device=device,
     )
     buffer    = TronformerReplayBuffer(seq_len=seq_len)
-    collector = TronformerCollector(seq_len=seq_len)
+    nstep_buf = NStepBuffer(n_step=args.n_step, gamma=GAMMA)
 
     if args.load:
         print(f"Resuming from checkpoint: {args.load}")
         trainer.load(args.load)
 
-    eval_csv = os.path.join(run_dir, "eval_rewards.csv")
+    eval_csv        = os.path.join(run_dir, "eval_rewards.csv")
     best_model_path = os.path.join(run_dir, "best_model.pt")
     best_mean = -np.inf
 
@@ -756,51 +714,76 @@ def train(args):
     obs, _ = env.reset()
     trainer.reset_obs_buffer()
 
-    ep_reward = 0.0
+    ep_reward  = 0.0
     ep_rewards: list = []
     step = args.start_step
     trainer._env_steps = args.start_step
     next_eval = ((args.start_step // EVAL_FREQ) + 1) * EVAL_FREQ
     losses: list = []
 
-    print(f"\nTraining TRONformer (R2D2) for {total_steps:,} steps")
-    print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={args.n_step}")
+    print(f"\nTraining TRONformer (CLS-DQN) for {total_steps:,} steps")
+    print(f"  seq_len={seq_len}, n_step={args.n_step}, batch={batch_sz}")
     print(f"  d_model={d_model}, n_layers={args.n_layers}, shade_bins={len(shade_bins)}")
     if args.boltzmann:
         print(f"  exploration=Boltzmann(tau={args.tau_start}→{args.tau_end})")
     else:
         print(f"  exploration=eps-greedy(eps_end={args.eps_end})")
     print(f"  eps_decay_steps={args.eps_decay_steps}, train_freq={TRAIN_FREQ}")
-    print(f"  buffer_capacity={BUFFER_CAPACITY}, reward_model=disabled")
+    print(f"  buffer_capacity={BUFFER_CAPACITY}")
     print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, "
           f"lam_zi={ENV_KWARGS['lam_zi']}\n")
 
     t0 = time.time()
 
+    obs_dim = obs.shape[0]
+
+    def _pad_obs_seq(seq: np.ndarray) -> np.ndarray:
+        """Zero-pad a (T, obs_dim) array to (seq_len, obs_dim)."""
+        T = seq.shape[0]
+        if T == seq_len:
+            return seq
+        pad = np.zeros((seq_len - T, obs_dim), dtype=seq.dtype)
+        return np.concatenate([pad, seq], axis=0)
+
+    def _peek_next_obs_seq(deque: collections.deque, next_obs: np.ndarray) -> np.ndarray:
+        """Compute what the rolling obs_seq will look like after adding next_obs,
+        without mutating the deque."""
+        window = list(deque) + [next_obs.astype(np.float32)]
+        if len(window) > seq_len:
+            window = window[-seq_len:]
+        return _pad_obs_seq(np.stack(window))
+
     while step < total_steps:
-        # Action selection (updates internal obs deque)
-        action = trainer.select_action(obs)
+        # select_action appends obs to trainer._obs_deque and returns action
+        action    = trainer.select_action(obs)
+        obs_seq_t = _pad_obs_seq(np.stack(list(trainer._obs_deque)))  # (seq_len, obs_dim)
 
         next_obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
-        shaped_reward = reward  # reward model disabled (GAMMA_RM_START=0.0)
 
-        collector.add(obs, action, shaped_reward, done)
-        ep_reward += reward  # track original reward for logging
+        ep_reward += reward
         step += 1
+
+        # next_obs_seq: what the rolling context will look like at t+1
+        if not done:
+            next_obs_seq = _peek_next_obs_seq(trainer._obs_deque, next_obs)
+        else:
+            next_obs_seq = np.zeros((seq_len, obs_dim), dtype=np.float32)  # done — won't be bootstrapped
+
+        nstep_buf.add(obs_seq_t, action, reward, done)
+
+        # Once n transitions accumulated, emit the oldest as a complete n-step transition
+        if len(nstep_buf) >= args.n_step:
+            buffer.add(*nstep_buf.get(next_obs_seq))
+
         obs = next_obs
 
-        if collector.ready():
-            seq = collector.flush()
-            if seq is not None:
-                buffer.add(*seq)
-
         if done:
+            # Drain remaining partial n-step transitions (episode ended early)
+            for t_drain in nstep_buf.drain(next_obs_seq):
+                buffer.add(*t_drain)
             ep_rewards.append(ep_reward)
             ep_reward = 0.0
-            seq = collector.flush(pad_if_short=True)
-            if seq is not None:
-                buffer.add(*seq)
             obs, _ = env.reset()
             trainer.reset_obs_buffer()
 
@@ -810,11 +793,9 @@ def train(args):
             if loss is not None:
                 losses.append(loss)
 
-        # Reward model training is disabled (GAMMA_RM_START=0.0)
-
         # Evaluate
         if step >= next_eval:
-            mean_r, std_r = evaluate(trainer.online, seq_len=seq_len)
+            mean_r, std_r = evaluate(trainer.online, seq_len=seq_len, device=device)
             elapsed = (time.time() - t0) / 60
             print(
                 f"  step={step:>8,}  eval={mean_r:+.3f}±{std_r:.3f}"
@@ -846,14 +827,15 @@ def train(args):
 
 def eval_only(args):
     assert args.load, "--eval-only requires --load <path>"
+    device = DEVICE
     shade_bins = ENV_KWARGS.get("shade_bins", UNIFORM_SHADE_BINS)
-    print(f"Loading {args.load}")
-    policy = TRONformerPolicy(input_dim=14, d_model=args.d_model, n_layers=args.n_layers, shade_bins=shade_bins)
-    policy.load_state_dict(torch.load(args.load, map_location="cpu"))
+    print(f"Loading {args.load} (device={device})")
+    policy = TRONformerPolicy(input_dim=14, d_model=args.d_model, n_layers=args.n_layers, shade_bins=shade_bins).to(device)
+    policy.load_state_dict(torch.load(args.load, map_location=device))
     policy.eval()
 
     n = args.eval_episodes
-    mean_r, std_r = evaluate(policy, n_episodes=n, seq_len=args.seq_len)
+    mean_r, std_r = evaluate(policy, n_episodes=n, seq_len=args.seq_len, device=device)
     print(f"Eval ({n} episodes): mean={mean_r:+.4f}  std={std_r:.4f}")
 
 
@@ -866,8 +848,6 @@ def parse_args():
                    help="Total environment steps (default 2 000 000)")
     p.add_argument("--seq-len", type=int, default=SEQ_LEN,
                    help=f"Sequence length / rolling context (default {SEQ_LEN})")
-    p.add_argument("--burnin", type=int, default=BURNIN,
-                   help=f"Steps to skip for loss (causal context) (default {BURNIN})")
     p.add_argument("--batch-size", type=int, default=BATCH_SIZE,
                    help=f"Batch size (default {BATCH_SIZE})")
     p.add_argument("--tag", type=str, default=None,
@@ -883,7 +863,11 @@ def parse_args():
     p.add_argument("--lam-zi", type=float, default=None,
                    help="Override lam_zi in ENV_KWARGS")
     p.add_argument("--skew-bins", action="store_true",
-                   help="Use skewed shade bins")
+                   help="Use skewed shade bins (overrides --shade-max and --n-bins)")
+    p.add_argument("--shade-max", type=float, default=600.0,
+                   help="Max shade value for uniform bins (default 600; ignored when --skew-bins)")
+    p.add_argument("--n-bins", type=int, default=42,
+                   help="Number of uniform shade bins (default 42; ignored when --skew-bins)")
     p.add_argument("--d-model", type=int, default=128,
                    help="Transformer hidden / embedding size (default 128)")
     p.add_argument("--eps-decay-steps", type=int, default=EPS_DECAY_STEPS,
@@ -898,8 +882,8 @@ def parse_args():
                    help="Override sim_time in ENV_KWARGS (default: use ENV_KWARGS value)")
     p.add_argument("--lr", type=float, default=LR,
                    help=f"Adam learning rate (default {LR})")
-    p.add_argument("--n-layers", type=int, default=1,
-                   help="Number of Pre-LN transformer blocks (default 1)")
+    p.add_argument("--n-layers", type=int, default=2,
+                   help="Number of Pre-LN transformer blocks (default 2, per paper §4.1)")
     p.add_argument("--n-step", type=int, default=N_STEP,
                    help=f"n-step return horizon (default {N_STEP})")
     p.add_argument("--eps-end", type=float, default=EPS_END,
@@ -910,6 +894,12 @@ def parse_args():
                    help="Initial temperature for Boltzmann exploration (default 2.0)")
     p.add_argument("--tau-end", type=float, default=0.1,
                    help="Final temperature for Boltzmann exploration (default 0.1)")
+    p.add_argument("--lam", type=float, default=None,
+                   help="Background market lambda (default: ENV_KWARGS value 0.005)")
+    p.add_argument("--shock-var", type=float, default=None,
+                   help="Fundamental shock variance (default: ENV_KWARGS value 1e6)")
+    p.add_argument("--pv-var", type=float, default=None,
+                   help="Private value variance (default: ENV_KWARGS value 5e6)")
     return p.parse_args()
 
 
@@ -918,7 +908,9 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    torch.backends.cudnn.deterministic = True
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+        torch.backends.cudnn.benchmark = True
 
     if args.n_bg is not None:
         ENV_KWARGS["num_background_agents"] = args.n_bg
@@ -928,9 +920,17 @@ def main():
         ENV_KWARGS["sim_time"] = args.sim_time
     if args.skew_bins:
         ENV_KWARGS["shade_bins"] = SKEWED_SHADE_BINS
+    elif args.shade_max != 600.0 or args.n_bins != 42:
+        ENV_KWARGS["shade_bins"] = np.linspace(0, args.shade_max, args.n_bins)
     if args.bg_strategy is not None:
         strat = _STRATEGIES[args.bg_strategy]
         ENV_KWARGS["bg_strategies"] = [{"shade": strat["shade"], "eta": strat["eta"]}]
+    if args.lam is not None:
+        ENV_KWARGS["lam"] = args.lam
+    if args.shock_var is not None:
+        ENV_KWARGS["shock_var"] = args.shock_var
+    if args.pv_var is not None:
+        ENV_KWARGS["pv_var"] = args.pv_var
 
     if args.eval_only:
         eval_only(args)

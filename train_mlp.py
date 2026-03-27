@@ -43,9 +43,13 @@ from stable_baselines3.common.callbacks import (
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
+import random
+import torch
+
 from marketsim.agent.zero_intelligence_agent import ZIAgent
 from marketsim.fundamental.lazy_mean_reverting import LazyGaussianMeanReverting
 from marketsim.market.market import Market
+from marketsim.simulator.simulator import Simulator
 from marketsim.wrappers.zi_env import ZIEnv
 
 # ── Hyper-parameters ──────────────────────────────────────────────────────────
@@ -87,6 +91,9 @@ ENV_KWARGS = dict(
     warmup_fraction=0.0,           # no warm-up: sparse market (lam=0.005) causes
                                    # repeated reschedules that push RL arrival past sim_time
 )
+
+# Seed multiplier — matches ne_experiment.py so Phase 1/3 seeds are consistent
+SEED_BG_MULTIPLIER = 1_000_000
 
 SAC_KWARGS = dict(
     policy="MlpPolicy",
@@ -245,6 +252,128 @@ def plot_learning_curve(
     print(f"  Saved: {out}")
 
 
+# ── Phase-3 evaluation: MLP vs ZI in full simulator ───────────────────────────
+
+def eval_ne_comparison(model_path: str, ne_strategy_idx: int,
+                       num_runs: int = 500, base_seed: int = 42) -> None:
+    """Run full-simulator comparison: 1 SAC-MLP deviator vs 15 ZI NE agents.
+
+    Uses the same CRN seeding scheme as ne_experiment.py:
+        run_seed = base_seed + ne_strategy_idx * SEED_BG_MULTIPLIER + run_idx
+
+    This ensures the fundamental paths and agent sequences match those used in
+    Phase 1 for the same background-strategy row, keeping results comparable.
+
+    Reports:
+        - MLP absolute profit      mean ± SE
+        - ZI mean absolute profit  mean ± SE  (average over all 15 BG agents)
+        - Relative advantage       MLP profit − mean(ZI profits)
+    """
+    from equilibrium_mlp import SACDeviator
+
+    sac_model = SAC.load(model_path, device="cpu")
+    sac_model.policy.set_training_mode(False)
+
+    ne_strat = _STRATEGIES[ne_strategy_idx]
+    n_bg     = ENV_KWARGS["num_background_agents"]
+
+    mlp_profits   = []
+    zi_mean_profs = []
+    rel_advs      = []
+
+    print(f"\n{'='*70}")
+    print(f"PHASE 3: MLP vs ZI NE comparison")
+    print(f"  NE strategy : S{ne_strategy_idx}  shade={ne_strat['shade']}  η={ne_strat['eta']}")
+    print(f"  Model       : {model_path}")
+    print(f"  Runs        : {num_runs}  |  base_seed={base_seed}")
+    print(f"  n_bg        : {n_bg}")
+    print(f"{'='*70}")
+
+    for run_idx in range(num_runs):
+        run_seed = base_seed + ne_strategy_idx * SEED_BG_MULTIPLIER + run_idx
+        random.seed(run_seed)
+        np.random.seed(run_seed)
+        torch.manual_seed(run_seed)
+
+        sim = Simulator(
+            num_background_agents=0,
+            sim_time=ENV_KWARGS["sim_time"],
+            num_assets=1,
+            lam=ENV_KWARGS["lam"],
+            mean=ENV_KWARGS["mean"],
+            r=ENV_KWARGS["r"],
+            shock_var=ENV_KWARGS["shock_var"],
+            q_max=ENV_KWARGS["q_max"],
+            pv_var=ENV_KWARGS["pv_var"],
+        )
+        sim.agents = {}
+
+        # Agent 0: SAC-MLP deviator — same pv_var/q_max as ZI peers (no advantage)
+        sim.agents[0] = SACDeviator(
+            agent_id=0,
+            market=sim.markets[0],
+            q_max=ENV_KWARGS["q_max"],
+            pv_var=ENV_KWARGS["pv_var"],
+            shade_range=ENV_KWARGS["shade_range"],
+            normalizers=ENV_KWARGS["normalizers"],
+            sac_model=sac_model,
+        )
+
+        # Agents 1–n_bg: ZI agents all playing the NE strategy
+        for i in range(1, n_bg + 1):
+            sim.agents[i] = ZIAgent(
+                agent_id=i,
+                market=sim.markets[0],
+                q_max=ENV_KWARGS["q_max"],
+                shade=ne_strat["shade"],
+                eta=ne_strat["eta"],
+                pv_var=ENV_KWARGS["pv_var"],
+            )
+
+        # Reseed order-shuffle RNG deterministically (matches ne_experiment.py)
+        sim.markets[0].event_queue.rand = random.Random(run_seed + 1)
+
+        sim.run()
+
+        fv = sim.markets[0].get_final_fundamental()
+
+        def profit(agent):
+            return agent.get_pos_value() + agent.position * fv + agent.cash
+
+        mlp_p    = profit(sim.agents[0])
+        bg_profs = [profit(sim.agents[i]) for i in range(1, n_bg + 1)]
+        mean_bg  = float(np.mean(bg_profs))
+
+        mlp_profits.append(mlp_p)
+        zi_mean_profs.append(mean_bg)
+        rel_advs.append(mlp_p - mean_bg)
+
+    sqrt_n = np.sqrt(num_runs)
+
+    mlp_mean = float(np.mean(mlp_profits))
+    mlp_se   = float(np.std(mlp_profits, ddof=1) / sqrt_n)
+
+    zi_mean  = float(np.mean(zi_mean_profs))
+    zi_se    = float(np.std(zi_mean_profs, ddof=1) / sqrt_n)
+
+    rel_mean = float(np.mean(rel_advs))
+    rel_se   = float(np.std(rel_advs, ddof=1) / sqrt_n)
+
+    print(f"\n  Results ({num_runs} simulations):")
+    print(f"    MLP profit        : {mlp_mean:>10.1f}  ±{mlp_se:.1f} SE")
+    print(f"    ZI mean profit    : {zi_mean:>10.1f}  ±{zi_se:.1f} SE")
+    print(f"    Relative advantage: {rel_mean:>+10.1f}  ±{rel_se:.1f} SE")
+    print()
+    if rel_mean > rel_se * 2:
+        print(f"  → MLP significantly outperforms ZI peers (+{rel_mean:.1f}, t≈{rel_mean/rel_se:.1f}σ)")
+    elif rel_mean < -rel_se * 2:
+        print(f"  → MLP significantly underperforms ZI peers ({rel_mean:.1f}, t≈{rel_mean/rel_se:.1f}σ)")
+    else:
+        print(f"  → MLP performance is statistically indistinguishable from ZI peers")
+    print(f"  (At NE, a ZI agent playing the same strategy has rel_advantage ≈ 0)")
+    print(f"{'='*70}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
@@ -265,11 +394,48 @@ def parse_args():
                    help="Skip training; only evaluate a saved model")
     p.add_argument("--load", type=str, default=None,
                    help="Path to model zip for --eval-only or to resume")
+    p.add_argument("--bg-strategy", type=int, default=None,
+                   help="Fix all background agents to this strategy index (0-9). "
+                        "Default: randomise each episode across all 10 strategies.")
+    p.add_argument("--seed", type=int, default=None,
+                   help="Global random seed for numpy/random/torch (training + eval).")
+    p.add_argument("--eval-ne", action="store_true",
+                   help="Run full-simulator MLP-vs-ZI comparison (requires --load and --bg-strategy).")
+    p.add_argument("--ne-runs", type=int, default=500,
+                   help="Number of simulator runs for --eval-ne (default 500).")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+
+    # ── Global seeding ────────────────────────────────────────────────────
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        print(f"Global seed set to {args.seed}")
+
+    # ── Background strategy override ──────────────────────────────────────
+    if args.bg_strategy is not None:
+        if args.bg_strategy not in _STRATEGIES:
+            raise ValueError(f"--bg-strategy must be 0-9, got {args.bg_strategy}")
+        strat = _STRATEGIES[args.bg_strategy]
+        ENV_KWARGS["bg_strategies"] = [{"shade": strat["shade"], "eta": strat["eta"]}]
+        print(f"Background strategy fixed to S{args.bg_strategy}: "
+              f"shade={strat['shade']} η={strat['eta']}")
+
+    # ── Phase-3 eval-ne mode ──────────────────────────────────────────────
+    if args.eval_ne:
+        assert args.load,        "--eval-ne requires --load <model_path>"
+        assert args.bg_strategy is not None, "--eval-ne requires --bg-strategy <idx>"
+        eval_ne_comparison(
+            model_path      = args.load,
+            ne_strategy_idx = args.bg_strategy,
+            num_runs        = args.ne_runs,
+            base_seed       = args.seed if args.seed is not None else 42,
+        )
+        return
 
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join("runs", f"sac_zi_{tag}")

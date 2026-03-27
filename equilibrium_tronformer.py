@@ -111,7 +111,7 @@ def _run_tronformer_cell(args):
     Returns:
         (bg_idx, mean_deviator_profit)
     """
-    bg_idx, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins = args
+    bg_idx, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins, lam, shock_var, pv_var = args
 
     bg = STRATEGIES[bg_idx]
     reward_norm = NORMALIZERS["reward"]
@@ -123,13 +123,13 @@ def _run_tronformer_cell(args):
     env_kwargs = dict(
         num_background_agents=n_bg,
         sim_time=ENV["sim_time"],
-        lam=ENV["lam"],
+        lam=lam,
         lam_zi=lam_zi,
         mean=ENV["mean"],
         r=ENV["r"],
-        shock_var=ENV["shock_var"],
+        shock_var=shock_var,
         q_max=ENV["q_max"],
-        pv_var=ENV["pv_var"],
+        pv_var=pv_var,
         shade=[250, 500],
         normalizers=NORMALIZERS,
         bg_strategies=[{'shade': bg['shade'], 'eta': bg['eta']}],
@@ -156,8 +156,8 @@ def _run_tronformer_cell(args):
             with torch.no_grad():
                 Q_shade, Q_eta = policy(obs_t)            # (1, cur_len, n_*)
 
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
+            shade_idx = int(Q_shade[0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, :].argmax().item())
 
             obs, r, terminated, truncated, _ = env.step(
                 np.array([shade_idx, eta_idx])
@@ -182,25 +182,35 @@ def run_tronformer_column(
     n_layers: int = 1,
     seq_len: int = SEQ_LEN,
     shade_bins: np.ndarray = None,
+    bg_only: int = None,
 ) -> np.ndarray:
     """Run num_runs TRONEnv episodes for each of the 10 ZI background strategies.
 
+    Args:
+        bg_only: if set, only evaluate against this single background strategy index.
+
     Returns:
         tronformer_column: float array of shape (10,) — mean TRONformer
-                           deviator profit for each ZI background strategy.
+                           deviator profit for each ZI background strategy
+                           (NaN for skipped rows when bg_only is set).
     """
     n_strats = len(STRATEGIES)
     n_bg = ENV['n_bg']
-    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins) for bg in range(n_strats)]
+    lam = ENV['lam']
+    shock_var = ENV['shock_var']
+    pv_var = ENV['pv_var']
+    bg_indices = [bg_only] if bg_only is not None else list(range(n_strats))
+    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi, n_layers, seq_len, shade_bins, lam, shock_var, pv_var)
+             for bg in bg_indices]
 
     if n_processes is None:
-        n_processes = min(mp.cpu_count(), n_strats)
+        n_processes = min(mp.cpu_count(), len(tasks))
 
-    tronformer_column = np.zeros(n_strats)
+    tronformer_column = np.full(n_strats, np.nan)
 
-    total_sims = n_strats * num_runs
+    total_sims = len(tasks) * num_runs
     print(
-        f"TRONformer deviator column:  {n_strats} cells  |  {num_runs} runs/cell  |  "
+        f"TRONformer deviator:  {len(tasks)} cells  |  {num_runs} runs/cell  |  "
         f"{total_sims:,} total simulations  |  {n_processes} processes"
     )
     print(f"  Model: {weights_path}")
@@ -210,7 +220,7 @@ def run_tronformer_column(
     with mp.Pool(n_processes) as pool:
         for bg_idx, tf_mean in tqdm(
             pool.imap_unordered(_run_tronformer_cell, tasks),
-            total=n_strats,
+            total=len(tasks),
             desc="TRONformer cells completed",
         ):
             tronformer_column[bg_idx] = tf_mean
@@ -342,8 +352,8 @@ def parse_args():
         help=f"RL agent arrival rate (default: {DEFAULT_LAM_ZI})",
     )
     p.add_argument(
-        "--n-layers", type=int, default=1,
-        help="Number of Pre-LN transformer blocks in the loaded model (default: 1)",
+        "--n-layers", type=int, default=2,
+        help="Number of Pre-LN transformer blocks in the loaded model (default: 2, per paper §4.1)",
     )
     p.add_argument(
         "--seq-len", type=int, default=SEQ_LEN,
@@ -353,6 +363,30 @@ def parse_args():
         "--skew-bins", action="store_true",
         help="Use skewed shade bins (must match how the model was trained)",
     )
+    p.add_argument(
+        "--shade-max", type=float, default=600.0,
+        help="Max shade value for uniform bins (default 600; ignored when --skew-bins)",
+    )
+    p.add_argument(
+        "--n-bins", type=int, default=42,
+        help="Number of uniform shade bins (default 42; ignored when --skew-bins)",
+    )
+    p.add_argument(
+        "--lam-market", type=float, default=None,
+        help="Background market lambda override (default: ENV default 0.005)",
+    )
+    p.add_argument(
+        "--shock-var", type=float, default=None,
+        help="Fundamental shock variance override (default: ENV default 1e6)",
+    )
+    p.add_argument(
+        "--pv-var", type=float, default=None,
+        help="Private value variance override (default: ENV default 5e6)",
+    )
+    p.add_argument(
+        "--bg-only", type=int, default=None,
+        help="Evaluate against only this background strategy index (0-9); skips all others",
+    )
     return p.parse_args()
 
 
@@ -360,8 +394,19 @@ def main():
     args = parse_args()
 
     ENV['n_bg'] = args.n_bg
+    if args.lam_market is not None:
+        ENV['lam'] = args.lam_market
+    if args.shock_var is not None:
+        ENV['shock_var'] = args.shock_var
+    if args.pv_var is not None:
+        ENV['pv_var'] = args.pv_var
 
-    shade_bins = SKEWED_SHADE_BINS if args.skew_bins else None
+    if args.skew_bins:
+        shade_bins = SKEWED_SHADE_BINS
+    elif args.shade_max != 600.0 or args.n_bins != 42:
+        shade_bins = np.linspace(0, args.shade_max, args.n_bins)
+    else:
+        shade_bins = None
 
     # ── Load ZI×ZI baseline ───────────────────────────────────────────────
     print(f"Loading ZI×ZI baseline from {args.baseline} ...")
@@ -377,6 +422,7 @@ def main():
         n_layers=args.n_layers,
         seq_len=args.seq_len,
         shade_bins=shade_bins,
+        bg_only=args.bg_only,
     )
 
     # ── Display extended results ──────────────────────────────────────────

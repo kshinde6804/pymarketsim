@@ -99,7 +99,7 @@ def _run_cell(args):
     Returns:
         (bg_idx, dev_idx, mean_rel, std_rel, mean_abs, std_abs)
     """
-    bg_idx, dev_idx, num_runs, base_seed, n_bg = args
+    bg_idx, dev_idx, num_runs, base_seed, n_bg, lam, shock_var, pv_var = args
     bg  = STRATEGIES[bg_idx]
     dev = STRATEGIES[dev_idx]
 
@@ -118,12 +118,12 @@ def _run_cell(args):
             num_background_agents=0,   # agents added manually below
             sim_time=ENV['sim_time'],
             num_assets=1,
-            lam=ENV['lam'],
+            lam=lam,
             mean=ENV['mean'],
             r=ENV['r'],
-            shock_var=ENV['shock_var'],
+            shock_var=shock_var,
             q_max=ENV['q_max'],
-            pv_var=ENV['pv_var'],
+            pv_var=pv_var,
         )
         sim.agents = {}
 
@@ -135,7 +135,7 @@ def _run_cell(args):
             q_max=ENV['q_max'],
             shade=dev['shade'],
             eta=dev['eta'],
-            pv_var=ENV['pv_var'],
+            pv_var=pv_var,
         )
 
         # Background agents 1..n_bg
@@ -146,7 +146,7 @@ def _run_cell(args):
                 q_max=ENV['q_max'],
                 shade=bg['shade'],
                 eta=bg['eta'],
-                pv_var=ENV['pv_var'],
+                pv_var=pv_var,
             )
 
         # Market.event_queue is created with no seed (random.Random(None) → OS
@@ -191,7 +191,11 @@ def run_ne_experiment(num_runs=NUM_RUNS, n_processes=None, base_seed=BASE_SEED):
     """
     n = len(STRATEGIES)
     n_bg = ENV['n_bg']
-    tasks = [(bg, dev, num_runs, base_seed, n_bg) for bg in range(n) for dev in range(n)]
+    lam = ENV['lam']
+    shock_var = ENV['shock_var']
+    pv_var = ENV['pv_var']
+    tasks = [(bg, dev, num_runs, base_seed, n_bg, lam, shock_var, pv_var)
+             for bg in range(n) for dev in range(n)]
 
     if n_processes is None:
         n_processes = min(mp.cpu_count(), len(tasks))
@@ -453,9 +457,21 @@ def main():
                         help="Output CSV filename prefix (default: 'results/ne_search/ne')")
     parser.add_argument("--n-bg",       type=int,   default=ENV['n_bg'],
                         help=f"Number of background agents (default: {ENV['n_bg']})")
+    parser.add_argument("--lam",        type=float, default=None,
+                        help="Market arrival rate lambda (default: ENV default 0.005)")
+    parser.add_argument("--shock-var",  type=float, default=None,
+                        help="Fundamental shock variance (default: ENV default 1e6)")
+    parser.add_argument("--pv-var",     type=float, default=None,
+                        help="Private value variance (default: ENV default 5e6)")
     args = parser.parse_args()
 
     ENV['n_bg'] = args.n_bg
+    if args.lam is not None:
+        ENV['lam'] = args.lam
+    if args.shock_var is not None:
+        ENV['shock_var'] = args.shock_var
+    if args.pv_var is not None:
+        ENV['pv_var'] = args.pv_var
 
     results = run_ne_experiment(
         num_runs   = args.num_runs,

@@ -1,0 +1,103 @@
+Global seed set to 42
+Background strategy fixed to S0: shade=[0, 450] η=0.5
+
+Run directory: runs/sac_zi_v4_ne_s42
+
+[1/4] Evaluating ZI baseline strategies...
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  ZI-tight  (shade=[90,110],   η=0.5)  mean=-3.091  std=13.964
+  ZI-medium (shade=[250,350],  η=0.5)  mean=-1.949  std=11.529
+  ZI-wide   (shade=[380,420],  η=1.0)  mean=-1.280  std=8.306
+
+[2/4] Setting up environments...
+  Using 4 parallel training environments (DummyVecEnv)
+
+[3/4] Training SAC agent...
+       timesteps     : 1,000,000
+       n_envs        : 4
+       eval_freq     : 10,000
+       eval_episodes : 20
+       env sim_time  : 2,000
+       shade_range   : [0, 600]
+
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Eval num_timesteps=40000, episode_reward=1.20 +/- 6.73
+Episode length: 9.60 +/- 2.91
+New best mean reward!
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Eval num_timesteps=80000, episode_reward=-0.62 +/- 12.19
+Episode length: 10.35 +/- 3.53
+Eval num_timesteps=120000, episode_reward=-0.29 +/- 11.65
+Episode length: 10.45 +/- 3.35
+Eval num_timesteps=160000, episode_reward=0.10 +/- 12.54
+Episode length: 9.10 +/- 2.32
+Eval num_timesteps=200000, episode_reward=-1.23 +/- 11.71
+Episode length: 10.60 +/- 3.48
+Eval num_timesteps=240000, episode_reward=3.07 +/- 15.07
+Episode length: 10.00 +/- 3.39
+New best mean reward!
+Eval num_timesteps=280000, episode_reward=-3.48 +/- 18.05
+Episode length: 10.55 +/- 2.82
+Eval num_timesteps=320000, episode_reward=0.73 +/- 13.25
+Episode length: 10.70 +/- 2.79
+Eval num_timesteps=360000, episode_reward=-0.28 +/- 12.85
+Episode length: 10.20 +/- 2.73
+Eval num_timesteps=400000, episode_reward=-1.82 +/- 10.85
+Episode length: 9.75 +/- 2.43
+Eval num_timesteps=440000, episode_reward=2.40 +/- 12.86
+Episode length: 9.40 +/- 3.87
+Eval num_timesteps=480000, episode_reward=-3.48 +/- 8.17
+Episode length: 9.50 +/- 2.56
+Eval num_timesteps=520000, episode_reward=1.91 +/- 8.15
+Episode length: 10.40 +/- 3.07
+Eval num_timesteps=560000, episode_reward=5.26 +/- 10.57
+Episode length: 11.05 +/- 3.50
+New best mean reward!
+Eval num_timesteps=600000, episode_reward=-0.03 +/- 13.10
+Episode length: 10.65 +/- 3.60
+Eval num_timesteps=640000, episode_reward=2.81 +/- 11.77
+Episode length: 9.20 +/- 3.23
+Eval num_timesteps=680000, episode_reward=-2.25 +/- 13.93
+Episode length: 9.45 +/- 2.69
+Eval num_timesteps=720000, episode_reward=-3.84 +/- 12.14
+Episode length: 10.35 +/- 2.24
+Eval num_timesteps=760000, episode_reward=4.98 +/- 14.21
+Episode length: 9.85 +/- 3.28
+Eval num_timesteps=800000, episode_reward=0.25 +/- 7.16
+Episode length: 10.25 +/- 2.74
+Eval num_timesteps=840000, episode_reward=-0.26 +/- 12.65
+Episode length: 9.70 +/- 3.57
+Eval num_timesteps=880000, episode_reward=-3.17 +/- 8.56
+Episode length: 10.25 +/- 2.41
+Eval num_timesteps=920000, episode_reward=-3.91 +/- 19.02
+Episode length: 9.90 +/- 2.19
+Eval num_timesteps=960000, episode_reward=-0.46 +/- 13.25
+Episode length: 9.90 +/- 3.10
+Eval num_timesteps=1000000, episode_reward=1.01 +/- 14.94
+Episode length: 9.70 +/- 3.47
+ 100% ━━━━━━━━━━━━━━━━━━━━━ 1,000,000/1,000,000  [ 5:47:46 < 0:00:00 , 57 it/s ]
+
+  Training finished in 347.8 min
+  Saved final model → runs/sac_zi_v4_ne_s42/final_model.zip
+
+[4/4] Evaluating trained agent...
+  Trained agent (best)  mean=+0.9088  std=10.4458
+
+  ZI Baseline comparison:
+    vs ZI-tight  (shade=[90,110],   η=0.5)  Δ=+3.9997
+    vs ZI-medium (shade=[250,350],  η=0.5)  Δ=+2.8581
+    vs ZI-wide   (shade=[380,420],  η=1.0)  Δ=+2.1885
+
+  Generating learning curve plot...
+  Saved: runs/sac_zi_v4_ne_s42/learning_curve.png
+
+All outputs in: runs/sac_zi_v4_ne_s42/

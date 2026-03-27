@@ -763,8 +763,14 @@ def parse_args():
                    help="Step count to resume from (sets epsilon schedule and eval trigger)")
     p.add_argument("--n-bg", type=int, default=None,
                    help="Override num_background_agents in ENV_KWARGS")
+    p.add_argument("--lam", type=float, default=None,
+                   help="Override market arrival rate lambda (also sets lam_zi if --lam-zi not given)")
     p.add_argument("--lam-zi", type=float, default=None,
                    help="Override lam_zi in ENV_KWARGS (RL agent arrival rate)")
+    p.add_argument("--shock-var", type=float, default=None,
+                   help="Override fundamental shock variance in ENV_KWARGS")
+    p.add_argument("--pv-var", type=float, default=None,
+                   help="Override private value variance in ENV_KWARGS")
     p.add_argument("--skew-bins", action="store_true",
                    help="Use skewed shade bins: 10 coarse in [0,300), 32 fine in [300,600]")
     p.add_argument("--hidden-dim", type=int, default=128,
@@ -790,8 +796,16 @@ def main():
 
     if args.n_bg is not None:
         ENV_KWARGS['num_background_agents'] = args.n_bg
+    if args.lam is not None:
+        ENV_KWARGS['lam'] = args.lam
+        if args.lam_zi is None:
+            ENV_KWARGS['lam_zi'] = args.lam
     if args.lam_zi is not None:
         ENV_KWARGS['lam_zi'] = args.lam_zi
+    if args.shock_var is not None:
+        ENV_KWARGS['shock_var'] = args.shock_var
+    if args.pv_var is not None:
+        ENV_KWARGS['pv_var'] = args.pv_var
     if args.skew_bins:
         ENV_KWARGS['shade_bins'] = SKEWED_SHADE_BINS
     if args.bg_strategy is not None:

@@ -1,0 +1,11 @@
+
+Run directory: runs/tronformer_ne24_s8_envB_matched
+
+Training TRONformer (CLS-DQN) for 2,000,000 steps
+  seq_len=40, n_step=5, batch=128
+  d_model=128, n_layers=2, shade_bins=42
+  exploration=eps-greedy(eps_end=0.05)
+  eps_decay_steps=1000000, train_freq=4
+  buffer_capacity=100000
+  env sim_time=2000, lam=0.005, lam_zi=0.005
+

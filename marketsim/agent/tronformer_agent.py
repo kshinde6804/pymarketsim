@@ -8,13 +8,20 @@ following Xiong et al. (2020).  The agent maintains a rolling observation buffer
 Architecture (§4.1):
     Input projection:  Linear(14 → d_model=128)
     [CLS] token:       learnable nn.Parameter prepended to the sequence
-    Positional enc:    Sinusoidal (standard)
-    N=2 Pre-LN blocks: x = x + MHA(LN(x))   [causal mask]
-                       x = x + FFN(LN(x))
+    Positional enc:    Sinusoidal (paper uses rotary [32]; sinusoidal approximation)
+    N=2 Pre-LN blocks: x = x + MHA(LN(x))   [NO causal mask — encoder-only]
+                       x = x + FFN(LN(x))    [ffn_hidden=512=4×d_model, h=8 heads]
     Dueling heads:     V: Linear(128→1)
                        Adv shade: Linear(128→128)→ReLU→Linear(128→42)
                        Adv eta:   Linear(128→128)→ReLU→Linear(128→2)
                        Q = V + A − mean(A)  (independently for shade and eta)
+
+NOTE — Remaining paper discrepancy (deferred):
+    Paper §4.1: "h_CLS is used to calculate the policy." The correct
+    implementation computes Q-values from the CLS token output (h[:,0,:])
+    rather than the last sequence position (h[:,-1,:]).  Doing so requires
+    a training-algorithm refactor (single Q-value per sequence instead of
+    per-timestep Q-values) and is left for future work.
 
 Observation features (14-dim, identical to TRONAgent):
     [0]  time_left
@@ -107,7 +114,7 @@ class PreLNTransformerBlock(nn.Module):
         ffn_hidden: FFN inner dimension (default 512 = 4 × d_model).
     """
 
-    def __init__(self, d_model: int = 128, n_heads: int = 4, ffn_hidden: int = 256):
+    def __init__(self, d_model: int = 128, n_heads: int = 8, ffn_hidden: int = 512):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -148,9 +155,9 @@ class TRONformerPolicy(nn.Module):
     Args:
         input_dim:    Observation dimension (default 14).
         d_model:      Transformer hidden / embedding size (default 128).
-        n_heads:      Number of attention heads (default 8).
-        n_layers:     Number of Pre-LN transformer blocks (default 2).
-        ffn_hidden:   FFN inner dimension (default 512).
+        n_heads:      Number of attention heads (default 8, head_dim=16 per paper §4.1).
+        n_layers:     Number of Pre-LN transformer blocks (default 2, per paper §4.1).
+        ffn_hidden:   FFN inner dimension (default 512 = 4×d_model, per paper §4.1).
         n_shade_bins: Discrete shade actions (default 42).
         n_eta_bins:   Discrete eta actions (default 2).
         shade_bins:   Optional custom shade bin array.
@@ -163,9 +170,9 @@ class TRONformerPolicy(nn.Module):
         self,
         input_dim: int = 14,
         d_model: int = 128,
-        n_heads: int = 4,
-        n_layers: int = 1,
-        ffn_hidden: int = 256,
+        n_heads: int = 8,
+        n_layers: int = 2,
+        ffn_hidden: int = 512,
         n_shade_bins: int = 42,
         n_eta_bins: int = 2,
         shade_bins: Optional[np.ndarray] = None,
@@ -208,21 +215,28 @@ class TRONformerPolicy(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through input projection → transformer → dueling heads.
+        """Forward pass through input projection → transformer → CLS dueling heads.
+
+        Architecture (paper §4.1):
+          1. Linear-project observations to d_model.
+          2. Prepend learnable [CLS] token.
+          3. Apply sinusoidal positional encoding.
+          4. Pass through N Pre-LN transformer blocks with a modified causal mask:
+               - CLS (row 0): attends to ALL tokens — global context aggregator.
+               - Obs token t (row t+1): causal — attends to CLS + obs tokens 0..t-1.
+             This ensures obs tokens never see future market states, while CLS
+             accumulates the full rolling context.
+          5. Policy derived from h_CLS = h[:, 0, :] via dueling heads.
 
         Args:
-            x: (batch, seq_len, input_dim) observation sequence.
-               Can also be (batch, input_dim) for single-step inference
-               (automatically unsqueezed; output has seq_len dimension squeezed).
+            x: (batch, seq_len, input_dim) or (batch, input_dim) for single step.
 
         Returns:
-            Q_shade: (batch, seq_len, n_shade_bins)
-            Q_eta:   (batch, seq_len, n_eta_bins)
+            Q_shade: (batch, n_shade_bins)  — Q-values from CLS representation
+            Q_eta:   (batch, n_eta_bins)
         """
-        squeeze = False
         if x.dim() == 2:
             x = x.unsqueeze(1)
-            squeeze = True
 
         batch, seq_len, _ = x.shape
 
@@ -236,12 +250,16 @@ class TRONformerPolicy(nn.Module):
         # Positional encoding
         h = self.pos_enc(h)
 
-        # Build causal mask: upper-triangular -inf, 0 on lower-tri/diagonal
+        # Modified causal mask:
+        #   - Row 0 (CLS): no masking — CLS attends to every token.
+        #   - Rows 1..T (obs): standard upper-triangular causal mask so obs_t
+        #     attends only to CLS + obs tokens at positions ≤ t.
         total_len = seq_len + 1
         attn_mask = torch.triu(
             torch.full((total_len, total_len), float("-inf"), device=x.device),
             diagonal=1,
         )
+        attn_mask[0, :] = 0.0  # CLS row: attend to all
 
         # Transformer blocks
         for block in self.blocks:
@@ -249,20 +267,17 @@ class TRONformerPolicy(nn.Module):
 
         h = self.final_norm(h)
 
-        # Remove CLS token — keep only original seq_len positions
-        h = h[:, 1:, :]  # (batch, seq_len, d_model)
+        # Policy from CLS token (position 0) — paper §4.1: "h_CLS is used to
+        # calculate the policy of the TRONformer."
+        h_cls = h[:, 0, :]  # (batch, d_model)
 
         # Dueling: Q = V + A − mean(A)
-        V = self.value_head(h)  # (batch, seq_len, 1)
-        A_shade = self.adv_shade(h)
-        A_eta = self.adv_eta(h)
+        V       = self.value_head(h_cls)       # (batch, 1)
+        A_shade = self.adv_shade(h_cls)        # (batch, n_shade_bins)
+        A_eta   = self.adv_eta(h_cls)          # (batch, n_eta_bins)
 
-        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)
-        Q_eta = V + A_eta - A_eta.mean(dim=-1, keepdim=True)
-
-        if squeeze:
-            Q_shade = Q_shade.squeeze(1)  # (batch, n_shade)
-            Q_eta = Q_eta.squeeze(1)      # (batch, n_eta)
+        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)  # (batch, n_shade_bins)
+        Q_eta   = V + A_eta   - A_eta.mean(dim=-1, keepdim=True)    # (batch, n_eta_bins)
 
         return Q_shade, Q_eta
 
@@ -428,9 +443,9 @@ class TRONformerAgent(ZIAgent):
         with torch.no_grad():
             Q_shade, Q_eta = self.policy(obs_t)  # (1, cur_len, 42), (1, cur_len, 2)
 
-        # Q-values at the last (most recent) position
-        shade_idx = int(Q_shade[0, -1, :].argmax().item())
-        eta_idx = int(Q_eta[0, -1, :].argmax().item())
+        # Q-values from CLS token — shape (1, n_bins)
+        shade_idx = int(Q_shade[0, :].argmax().item())
+        eta_idx   = int(Q_eta[0, :].argmax().item())
 
         shade_val = float(self.policy.SHADE_BINS[shade_idx])
         eta = float(TRONformerPolicy.ETA_BINS[eta_idx])
