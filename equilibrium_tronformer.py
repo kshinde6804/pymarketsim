@@ -148,10 +148,14 @@ def _run_tronformer_cell(args):
 
         while not done:
             obs_buffer.append(obs.astype(np.float32))
-            obs_seq = np.stack(list(obs_buffer))          # (cur_len, 14)
+            obs_raw = np.stack(list(obs_buffer))          # (cur_len, 14)
+            # Left-pad to seq_len to match training format (training always
+            # stores zero-padded sequences of length seq_len via _pad_obs_seq).
+            obs_seq = np.zeros((seq_len, 14), dtype=np.float32)
+            obs_seq[seq_len - len(obs_raw):] = obs_raw
             obs_t = torch.tensor(
                 obs_seq, dtype=torch.float32
-            ).unsqueeze(0)                                # (1, cur_len, 14)
+            ).unsqueeze(0)                                # (1, seq_len, 14)
 
             with torch.no_grad():
                 Q_shade, Q_eta = policy(obs_t)            # (1, cur_len, n_*)

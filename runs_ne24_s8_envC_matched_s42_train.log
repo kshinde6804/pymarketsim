@@ -1,0 +1,42 @@
+
+Run directory: runs/tronformer_ne24_s8_envC_matched_s42
+Device: cpu
+/Users/kshin/Documents/GitHub/pymarketsim/train_tronformer.py:380: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+/Users/kshin/Documents/GitHub/pymarketsim/train_tronformer.py:386: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.rm_scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+
+Training TRONformer (CLS-DQN) for 2,000,000 steps
+  seq_len=40, n_step=5, batch=512
+  d_model=128, n_layers=2, shade_bins=42
+  exploration=eps-greedy(eps_end=0.05)
+  eps_decay_steps=1000000, train_freq=4
+  buffer_capacity=100000
+  env sim_time=2000, lam=0.012, lam_zi=0.012
+
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  step=  50,000  eval=+0.335±1.455  eps=0.953  loss=0.2360  74.3min
+  Saved model → runs/tronformer_ne24_s8_envC_matched_s42/best_model.pt
+  step= 100,000  eval=+0.173±1.684  eps=0.905  loss=0.2264  148.4min
+  step= 150,000  eval=+0.638±1.899  eps=0.858  loss=0.1980  222.3min
+  Saved model → runs/tronformer_ne24_s8_envC_matched_s42/best_model.pt
+  step= 200,000  eval=+0.158±1.432  eps=0.810  loss=0.1692  296.1min
+  step= 250,000  eval=-0.051±1.935  eps=0.762  loss=0.1604  369.9min
+  step= 300,000  eval=+0.169±1.743  eps=0.715  loss=0.1389  443.6min
+  step= 350,000  eval=+0.191±1.389  eps=0.667  loss=0.1297  517.5min
+  step= 400,000  eval=-0.158±1.525  eps=0.620  loss=0.1162  591.2min
+  step= 450,000  eval=+0.246±1.533  eps=0.573  loss=0.1194  665.0min
+  step= 500,000  eval=-0.092±1.164  eps=0.525  loss=0.1007  738.6min
+  step= 550,000  eval=+0.332±1.439  eps=0.478  loss=0.1025  812.3min
+  step= 600,000  eval=+0.215±1.292  eps=0.430  loss=0.0909  885.9min
+  step= 650,000  eval=+0.353±1.423  eps=0.383  loss=0.1059  959.5min
+  step= 700,000  eval=+0.307±1.308  eps=0.335  loss=0.0889  1033.4min
+  step= 750,000  eval=+0.449±1.369  eps=0.288  loss=0.0862  1107.2min
+  step= 800,000  eval=+0.411±1.618  eps=0.240  loss=0.0765  1181.0min
+  step= 850,000  eval=+0.172±2.060  eps=0.193  loss=0.0843  1255.8min
+  step= 900,000  eval=+0.148±1.954  eps=0.145  loss=0.0824  1329.8min
+  step= 950,000  eval=+0.017±1.287  eps=0.098  loss=0.0930  1405.8min
+  step=1,000,000  eval=+0.186±1.248  eps=0.050  loss=0.0722  1488.6min

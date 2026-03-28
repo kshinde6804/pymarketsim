@@ -8,20 +8,16 @@ following Xiong et al. (2020).  The agent maintains a rolling observation buffer
 Architecture (§4.1):
     Input projection:  Linear(14 → d_model=128)
     [CLS] token:       learnable nn.Parameter prepended to the sequence
-    Positional enc:    Sinusoidal (paper uses rotary [32]; sinusoidal approximation)
-    N=2 Pre-LN blocks: x = x + MHA(LN(x))   [NO causal mask — encoder-only]
-                       x = x + FFN(LN(x))    [ffn_hidden=512=4×d_model, h=8 heads]
+    Positional enc:    Rotary Position Embeddings (RoPE) [Su et al., 2021]
+                       applied to Q and K inside each attention block.
+                       CLS occupies position 0; observation tokens follow
+                       at positions 1..seq_len.
+    N=2 Pre-LN blocks: x = x + MHA_RoPE(LN(x))   [NO causal mask — encoder-only]
+                       x = x + FFN(LN(x))          [ffn_hidden=512=4×d_model, h=8 heads]
     Dueling heads:     V: Linear(128→1)
                        Adv shade: Linear(128→128)→ReLU→Linear(128→42)
                        Adv eta:   Linear(128→128)→ReLU→Linear(128→2)
                        Q = V + A − mean(A)  (independently for shade and eta)
-
-NOTE — Remaining paper discrepancy (deferred):
-    Paper §4.1: "h_CLS is used to calculate the policy." The correct
-    implementation computes Q-values from the CLS token output (h[:,0,:])
-    rather than the last sequence position (h[:,-1,:]).  Doing so requires
-    a training-algorithm refactor (single Q-value per sequence instead of
-    per-timestep Q-values) and is left for future work.
 
 Observation features (14-dim, identical to TRONAgent):
     [0]  time_left
@@ -64,38 +60,139 @@ from marketsim.wrappers.metrics import (
 SEQ_LEN: int = 40
 
 
-# ── Positional Encoding ───────────────────────────────────────────────────────
+# ── Rotary Position Embeddings (RoPE) ────────────────────────────────────────
 
 
-class PositionalEncoding(nn.Module):
-    """Standard sinusoidal positional encoding (Vaswani et al., 2017).
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    """Split x along last dim and rotate: [x1, x2] → [−x2, x1]."""
+    half = x.shape[-1] // 2
+    return torch.cat([-x[..., half:], x[..., :half]], dim=-1)
+
+
+def _apply_rotary_emb(
+    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+) -> torch.Tensor:
+    """Apply RoPE rotation to x using pre-computed cos/sin tables.
 
     Args:
-        d_model: Model (embedding) dimension.
-        max_len: Maximum sequence length supported.
+        x:   (..., seq_len, d_head)
+        cos: (seq_len, d_head) — broadcast-compatible
+        sin: (seq_len, d_head)
+
+    Returns:
+        (..., seq_len, d_head)
+    """
+    return x * cos + _rotate_half(x) * sin
+
+
+class RotaryEmbedding(nn.Module):
+    """Rotary Position Embedding (Su et al., 2021 — RoFormer).
+
+    Pre-computes cos/sin tables for positions 0..max_len−1.
+
+    Args:
+        d_head:  Per-head dimension (d_model // n_heads); must be even.
+        max_len: Maximum sequence length to pre-compute.
+        base:    Frequency base (default 10 000, per the original paper).
     """
 
-    def __init__(self, d_model: int, max_len: int = 512):
+    def __init__(self, d_head: int, max_len: int = 512, base: float = 10000.0):
         super().__init__()
-        pe = torch.zeros(1, max_len, d_model)
-        position = torch.arange(max_len).unsqueeze(1).float()
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[0, :, 0::2] = torch.sin(position * div_term)
-        pe[0, :, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe)
+        assert d_head % 2 == 0, "d_head must be even for RoPE"
+        half = d_head // 2
+        inv_freq = 1.0 / (base ** (torch.arange(0, half).float() / half))
+        self.register_buffer("inv_freq", inv_freq)
+        self._build_cache(max_len, d_head)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Add positional encoding to x.
+    def _build_cache(self, max_len: int, d_head: int) -> None:
+        positions = torch.arange(max_len, dtype=torch.float32)  # (max_len,)
+        freqs = torch.outer(positions, self.inv_freq)            # (max_len, d_head//2)
+        emb = torch.cat([freqs, freqs], dim=-1)                  # (max_len, d_head)
+        self.register_buffer("cos_cached", emb.cos())
+        self.register_buffer("sin_cached", emb.sin())
 
-        Args:
-            x: (batch, seq_len, d_model)
+    def forward(
+        self, seq_len: int, device: torch.device
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return (cos, sin) tables for positions 0..seq_len−1.
 
         Returns:
-            (batch, seq_len, d_model) with positional encoding added.
+            cos: (seq_len, d_head)
+            sin: (seq_len, d_head)
         """
-        return x + self.pe[:, : x.size(1), :]
+        return (
+            self.cos_cached[:seq_len].to(device),
+            self.sin_cached[:seq_len].to(device),
+        )
+
+
+# ── Multi-head Self-Attention with RoPE ──────────────────────────────────────
+
+
+class MultiheadSelfAttentionWithRoPE(nn.Module):
+    """Multi-head self-attention that applies Rotary Position Embeddings to Q and K.
+
+    Replaces nn.MultiheadAttention so that RoPE is injected directly into the
+    query and key projections before computing scaled dot-product attention.
+
+    Args:
+        d_model: Model dimension (must be divisible by n_heads).
+        n_heads: Number of attention heads.
+    """
+
+    def __init__(self, d_model: int, n_heads: int):
+        super().__init__()
+        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        self.qkv_proj = nn.Linear(d_model, 3 * d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Forward pass with RoPE-rotated Q and K.
+
+        Args:
+            x:         (batch, seq_len, d_model)
+            cos:       (seq_len, d_head) — pre-computed by RotaryEmbedding
+            sin:       (seq_len, d_head)
+            attn_mask: (seq_len, seq_len) additive mask (0 / −inf), optional.
+
+        Returns:
+            (batch, seq_len, d_model)
+        """
+        B, T, D = x.shape
+
+        # Fused QKV projection then split
+        qkv = self.qkv_proj(x)                                   # (B, T, 3·D)
+        qkv = qkv.reshape(B, T, 3, self.n_heads, self.d_head)
+        q, k, v = qkv.unbind(dim=2)                              # each (B, T, H, d_head)
+        q = q.transpose(1, 2)                                    # (B, H, T, d_head)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # Apply RoPE to Q and K (broadcast over batch and head dims)
+        cos_ = cos.unsqueeze(0).unsqueeze(0)                     # (1, 1, T, d_head)
+        sin_ = sin.unsqueeze(0).unsqueeze(0)
+        q = _apply_rotary_emb(q, cos_, sin_)
+        k = _apply_rotary_emb(k, cos_, sin_)
+
+        # Scaled dot-product attention
+        scale = self.d_head ** -0.5
+        scores = torch.matmul(q, k.transpose(-2, -1)) * scale    # (B, H, T, T)
+        if attn_mask is not None:
+            scores = scores + attn_mask                          # broadcast over B, H
+        weights = scores.softmax(dim=-1)
+        out = torch.matmul(weights, v)                           # (B, H, T, d_head)
+
+        # Merge heads
+        out = out.transpose(1, 2).reshape(B, T, D)               # (B, T, D)
+        return self.out_proj(out)
 
 
 # ── Pre-LN Transformer Block ──────────────────────────────────────────────────
@@ -105,8 +202,11 @@ class PreLNTransformerBlock(nn.Module):
     """Single Pre-LN transformer block following Xiong et al. (2020).
 
     Applies LayerNorm *before* the sub-layers (pre-norm):
-        x = x + MHA(LN(x))
+        x = x + MHA_RoPE(LN(x))
         x = x + FFN(LN(x))
+
+    Attention uses MultiheadSelfAttentionWithRoPE, which applies Rotary
+    Position Embeddings to Q and K before computing attention scores.
 
     Args:
         d_model:    Model dimension (default 128).
@@ -118,7 +218,7 @@ class PreLNTransformerBlock(nn.Module):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-        self.attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.attn = MultiheadSelfAttentionWithRoPE(d_model, n_heads)
         self.ffn = nn.Sequential(
             nn.Linear(d_model, ffn_hidden),
             nn.ReLU(),
@@ -128,19 +228,23 @@ class PreLNTransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
         attn_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass through one Pre-LN transformer block.
 
         Args:
             x:         (batch, seq_len, d_model)
+            cos:       (seq_len, d_head) — RoPE cosine table from RotaryEmbedding
+            sin:       (seq_len, d_head) — RoPE sine table from RotaryEmbedding
             attn_mask: Additive causal mask (seq_len, seq_len) with 0 / -inf.
 
         Returns:
             (batch, seq_len, d_model)
         """
         normed = self.norm1(x)
-        attn_out, _ = self.attn(normed, normed, normed, attn_mask=attn_mask)
+        attn_out = self.attn(normed, cos, sin, attn_mask=attn_mask)
         x = x + attn_out
         x = x + self.ffn(self.norm2(x))
         return x
@@ -190,8 +294,9 @@ class TRONformerPolicy(nn.Module):
         # Input projection
         self.input_proj = nn.Linear(input_dim, d_model)
 
-        # Sinusoidal positional encoding (applied after CLS prepend)
-        self.pos_enc = PositionalEncoding(d_model)
+        # Rotary positional embeddings — shared across all blocks.
+        # d_head = d_model // n_heads = 128 // 8 = 16.
+        self.rope = RotaryEmbedding(d_head=d_model // n_heads)
 
         # N Pre-LN transformer blocks
         self.blocks = nn.ModuleList(
@@ -220,10 +325,13 @@ class TRONformerPolicy(nn.Module):
         Architecture (paper §4.1):
           1. Linear-project observations to d_model.
           2. Prepend learnable [CLS] token.
-          3. Apply sinusoidal positional encoding.
+          3. Compute RoPE cos/sin tables for positions 0..seq_len:
+               - Position 0 → CLS token.
+               - Positions 1..seq_len → observation tokens.
+             RoPE is applied to Q and K inside each attention block.
           4. Pass through N Pre-LN transformer blocks with a modified causal mask:
                - CLS (row 0): attends to ALL tokens — global context aggregator.
-               - Obs token t (row t+1): causal — attends to CLS + obs tokens 0..t-1.
+               - Obs token t (row t+1): causal — attends to CLS + obs tokens 0..t.
              This ensures obs tokens never see future market states, while CLS
              accumulates the full rolling context.
           5. Policy derived from h_CLS = h[:, 0, :] via dueling heads.
@@ -247,14 +355,14 @@ class TRONformerPolicy(nn.Module):
         cls = self.cls_token.expand(batch, 1, self.d_model)
         h = torch.cat([cls, h], dim=1)
 
-        # Positional encoding
-        h = self.pos_enc(h)
+        # RoPE: positions 0..seq_len (CLS=0, obs_1..obs_seq_len follow).
+        total_len = seq_len + 1
+        cos, sin = self.rope(total_len, x.device)  # each (total_len, d_head)
 
         # Modified causal mask:
         #   - Row 0 (CLS): no masking — CLS attends to every token.
         #   - Rows 1..T (obs): standard upper-triangular causal mask so obs_t
         #     attends only to CLS + obs tokens at positions ≤ t.
-        total_len = seq_len + 1
         attn_mask = torch.triu(
             torch.full((total_len, total_len), float("-inf"), device=x.device),
             diagonal=1,
@@ -263,7 +371,7 @@ class TRONformerPolicy(nn.Module):
 
         # Transformer blocks
         for block in self.blocks:
-            h = block(h, attn_mask)
+            h = block(h, cos, sin, attn_mask)
 
         h = self.final_norm(h)
 
@@ -435,10 +543,14 @@ class TRONformerAgent(ZIAgent):
         side = random.choice([BUY, SELL])
         obs = self.build_obs(side)
 
-        # Append to rolling buffer and build sequence tensor
+        # Append to rolling buffer and build left-padded sequence tensor.
+        # Training stores sequences left-padded with zeros to seq_len via
+        # _pad_obs_seq(); inference must match that format.
         self.obs_buffer.append(obs.astype(np.float32))
-        obs_seq = np.stack(list(self.obs_buffer))  # (cur_len, 14)
-        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)  # (1, cur_len, 14)
+        obs_raw = np.stack(list(self.obs_buffer))  # (cur_len, 14)
+        obs_seq = np.zeros((self.seq_len, 14), dtype=np.float32)
+        obs_seq[self.seq_len - len(obs_raw):] = obs_raw
+        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, 14)
 
         with torch.no_grad():
             Q_shade, Q_eta = self.policy(obs_t)  # (1, cur_len, 42), (1, cur_len, 2)

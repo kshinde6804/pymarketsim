@@ -1,0 +1,20 @@
+
+Run directory: runs/tronformer_ne24_s8_envC_matched_s456
+Device: cpu
+/Users/kshin/Documents/GitHub/pymarketsim/train_tronformer.py:380: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+/Users/kshin/Documents/GitHub/pymarketsim/train_tronformer.py:386: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.rm_scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+
+Training TRONformer (CLS-DQN) for 2,000,000 steps
+  seq_len=40, n_step=5, batch=512
+  d_model=128, n_layers=2, shade_bins=42
+  exploration=eps-greedy(eps_end=0.05)
+  eps_decay_steps=1000000, train_freq=4
+  buffer_capacity=100000
+  env sim_time=2000, lam=0.012, lam_zi=0.012
+
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)

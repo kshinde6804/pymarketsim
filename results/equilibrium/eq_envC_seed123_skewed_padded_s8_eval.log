@@ -1,0 +1,56 @@
+Loading ZI×ZI baseline from results/ne_search/ne_envC_nb24_abs_mean.csv ...
+  Loaded 10×10 matrix.
+
+TRONformer deviator:  1 cells  |  500 runs/cell  |  500 total simulations  |  1 processes
+  Model: runs/tronformer_ne24_s8_envC_seed123_skewed/best_model.pt
+  ENV: lam=0.012, lam_zi=0.012, sim_time=2000, n_bg=24.
+
+TRONformer cells completed:   0%|          | 0/1 [00:00<?, ?it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+TRONformer cells completed: 100%|██████████| 1/1 [00:21<00:00, 21.46s/it]TRONformer cells completed: 100%|██████████| 1/1 [00:21<00:00, 21.46s/it]
+
+==========================================================================================
+DEVIATOR PROFIT TABLE  (extended with TRONformer deviator)
+Rows = background strategy  |  Cols = deviator strategy
+Value = mean deviator profit  |  Last col (TRONformer) = TRONformer transformer DQN
+==========================================================================================
+                 S0      S1      S2      S3      S4      S5      S6      S7      S8      S9  TRONformer
+BG Strategy                                                                                            
+S0           1135.9  1135.5  1062.5  1107.7  1134.9  1193.4  1187.5  1073.2  1191.8  1093.1         NaN
+S1           1332.5  1378.3  1256.2  1307.5  1336.4  1391.2  1412.8  1295.4  1464.4  1382.7         NaN
+S2           1104.5  1128.5  1064.1  1101.2  1130.2  1190.3  1225.0  1112.4  1240.4  1231.3         NaN
+S3           1219.1  1259.1  1133.1  1184.0  1210.0  1285.9  1309.4  1169.2  1323.1  1322.4         NaN
+S4           1214.0  1241.8  1143.3  1198.7  1240.1  1276.8  1299.3  1166.2  1324.9  1258.2         NaN
+S5           1284.6  1336.3  1222.7  1279.3  1322.7  1369.8  1374.1  1263.5  1374.7  1298.1         NaN
+S6           1227.6  1272.7  1139.3  1194.6  1241.1  1294.9  1311.3  1232.3  1340.1  1316.8         NaN
+S7           1609.2  1627.4  1572.4  1601.5  1640.2  1630.5  1609.4  1471.0  1585.5  1464.1         NaN
+S8           1337.4  1375.9  1244.0  1322.1  1364.5  1419.1  1464.2  1348.1  1466.8  1443.4       350.4
+S9            955.4  1000.4   805.8   906.3   982.7  1096.6  1143.7  1065.0  1180.7  1115.3         NaN
+
+==========================================================================================
+BEST DEVIATOR STRATEGY FOR EACH BACKGROUND STRATEGY
+==========================================================================================
+ BG Strategy │ Best Deviation │  Advantage │ NE? │ TRONformer better than ZI best?
+────────────────────────────────────────────────────────────────────────────────
+          S0 │             S5 │     1193.4    │     │ No  (S5 +1193)
+          S1 │             S8 │     1464.4    │     │ No  (S8 +1464)
+          S2 │             S8 │     1240.4    │     │ No  (S8 +1240)
+          S3 │             S8 │     1323.1    │     │ No  (S8 +1323)
+          S4 │             S8 │     1324.9    │     │ No  (S8 +1325)
+          S5 │             S8 │     1374.7    │     │ No  (S8 +1375)
+          S6 │             S8 │     1340.1    │     │ No  (S8 +1340)
+          S7 │             S4 │     1640.2    │     │ No  (S4 +1640)
+          S8 │             S8 │     1466.8 ✓  │     │ No  (S8 +1467)
+          S9 │             S8 │     1180.7    │     │ No  (S8 +1181)
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+  TRONformer is the best deviator against 0/10 background strategies:
+
+  Nash equilibrium candidates (pure-strategy): ['S8']
+==========================================================================================
+
+Extended advantage matrix saved to results/equilibrium/eq_envC_seed123_skewed_padded_s8_results.csv

@@ -1,0 +1,42 @@
+Loading ZI×ZI baseline from results/ne_search/ne_envA_nb24_abs_mean.csv ...
+  Loaded 10×10 matrix.
+
+TRONformer deviator:  1 cells  |  500 runs/cell  |  500 total simulations  |  1 processes
+  Model: runs/tronformer_v6b_envA/best_model.pt
+  ENV: lam=0.0005, lam_zi=0.0005, sim_time=2000, n_bg=24.
+
+TRONformer cells completed:   0%|          | 0/1 [00:00<?, ?it/s]TRONformer cells completed:   0%|          | 0/1 [00:01<?, ?it/s]
+multiprocessing.pool.RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/Users/kshin/.pyenv/versions/3.12.2/lib/python3.12/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+                    ^^^^^^^^^^^^^^^^^^^
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 120, in _run_tronformer_cell
+    policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
+  File "/Users/kshin/Documents/GitHub/pymarketsim/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2635, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for TRONformerPolicy:
+	size mismatch for blocks.0.ffn.0.weight: copying a param with shape torch.Size([256, 128]) from checkpoint, the shape in current model is torch.Size([512, 128]).
+	size mismatch for blocks.0.ffn.0.bias: copying a param with shape torch.Size([256]) from checkpoint, the shape in current model is torch.Size([512]).
+	size mismatch for blocks.0.ffn.2.weight: copying a param with shape torch.Size([128, 256]) from checkpoint, the shape in current model is torch.Size([128, 512]).
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 441, in <module>
+    main()
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 421, in main
+    tronformer_column = run_tronformer_column(
+                        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 225, in run_tronformer_column
+    for bg_idx, tf_mean in tqdm(
+  File "/Users/kshin/Documents/GitHub/pymarketsim/venv/lib/python3.12/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/Users/kshin/.pyenv/versions/3.12.2/lib/python3.12/multiprocessing/pool.py", line 873, in next
+    raise value
+RuntimeError: Error(s) in loading state_dict for TRONformerPolicy:
+	size mismatch for blocks.0.ffn.0.weight: copying a param with shape torch.Size([256, 128]) from checkpoint, the shape in current model is torch.Size([512, 128]).
+	size mismatch for blocks.0.ffn.0.bias: copying a param with shape torch.Size([256]) from checkpoint, the shape in current model is torch.Size([512]).
+	size mismatch for blocks.0.ffn.2.weight: copying a param with shape torch.Size([128, 256]) from checkpoint, the shape in current model is torch.Size([128, 512]).
