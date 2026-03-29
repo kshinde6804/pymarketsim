@@ -1,0 +1,56 @@
+Loading ZI×ZI baseline from results/ne_search/ne_envC_seed123_nb24_abs_mean.csv ...
+  Loaded 10×10 matrix.
+
+TRONformer deviator:  1 cells  |  500 runs/cell  |  500 total simulations  |  1 processes
+  Model: runs/tronformer_ne24_envC_rope_seed123_skewed/best_model.pt
+  ENV: lam=0.012, lam_zi=0.012, sim_time=2000, n_bg=24.
+
+TRONformer cells completed:   0%|          | 0/1 [00:00<?, ?it/s]/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+TRONformer cells completed: 100%|██████████| 1/1 [35:12<00:00, 2112.44s/it]TRONformer cells completed: 100%|██████████| 1/1 [35:12<00:00, 2112.44s/it]
+
+==========================================================================================
+DEVIATOR PROFIT TABLE  (extended with TRONformer deviator)
+Rows = background strategy  |  Cols = deviator strategy
+Value = mean deviator profit  |  Last col (TRONformer) = TRONformer transformer DQN
+==========================================================================================
+                S0     S1     S2     S3     S4     S5     S6     S7     S8     S9  TRONformer
+BG Strategy                                                                                  
+S0           249.3  235.7  256.6  271.0  268.9  278.9  291.5  228.2  271.0  149.7         NaN
+S1           383.3  375.7  285.0  311.8  331.2  377.7  371.4  333.2  376.2  224.2         NaN
+S2           186.9  206.3  177.0  191.4  261.1  264.7  312.6  265.3  288.1  167.9         NaN
+S3           355.3  391.7  324.4  357.1  390.9  419.7  402.6  311.7  380.0  257.1         NaN
+S4           383.0  393.2  366.1  366.3  371.4  399.3  388.7  354.5  383.9  202.1         NaN
+S5           405.4  419.4  369.7  376.9  406.4  404.5  372.6  348.5  330.5  211.1         NaN
+S6           278.2  290.6  304.8  331.1  330.8  321.5  331.2  325.8  287.7  160.0       165.6
+S7           506.9  517.1  504.6  499.4  519.1  485.6  457.2  341.0  443.9  258.9         NaN
+S8           348.9  390.4  365.5  375.5  385.2  426.9  399.6  383.5  332.3  174.2         NaN
+S9            68.8  126.6   -3.7   78.2  102.5  178.2  205.2  195.6  205.5   60.2         NaN
+
+==========================================================================================
+BEST DEVIATOR STRATEGY FOR EACH BACKGROUND STRATEGY
+==========================================================================================
+ BG Strategy │ Best Deviation │  Advantage │ NE? │ TRONformer better than ZI best?
+────────────────────────────────────────────────────────────────────────────────
+          S0 │             S6 │      291.5    │     │ No  (S6 +292)
+          S1 │             S0 │      383.3    │     │ No  (S0 +383)
+          S2 │             S6 │      312.6    │     │ No  (S6 +313)
+          S3 │             S5 │      419.7    │     │ No  (S5 +420)
+          S4 │             S5 │      399.3    │     │ No  (S5 +399)
+          S5 │             S1 │      419.4    │     │ No  (S1 +419)
+          S6 │             S6 │      331.2 ✓  │     │ No  (S6 +331)
+          S7 │             S4 │      519.1    │     │ No  (S4 +519)
+          S8 │             S5 │      426.9    │     │ No  (S5 +427)
+          S9 │             S8 │      205.5    │     │ No  (S8 +205)
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+  TRONformer is the best deviator against 0/10 background strategies:
+
+  Nash equilibrium candidates (pure-strategy): ['S6']
+==========================================================================================
+
+Extended advantage matrix saved to results/equilibrium/envC_rope_seed123/ne24_envC_rope_seed123_skewed_results.csv

@@ -411,7 +411,8 @@ class R2D2FormerTrainer:
 
         Uses Boltzmann (temperature-scaled softmax) if self.boltzmann=True,
         otherwise epsilon-greedy. Appends obs to the internal deque, stacks
-        to a sequence, and queries the online policy at the last position.
+        to a left-padded sequence of length seq_len (matching the replay buffer
+        and TRONformerAgent deployment format), and queries the online policy.
 
         Args:
             obs: (obs_dim,) numpy array — current observation.
@@ -420,8 +421,11 @@ class R2D2FormerTrainer:
             action: [shade_idx, eta_idx] int64 array.
         """
         self._obs_deque.append(obs.astype(np.float32))
-        obs_seq = np.stack(list(self._obs_deque))  # (cur_len, obs_dim)
-        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, cur_len, D)
+        obs_raw = np.stack(list(self._obs_deque))  # (cur_len, obs_dim)
+        # Left-pad to seq_len to match replay buffer and TRONformerAgent format
+        obs_seq = np.zeros((self.seq_len, obs_raw.shape[1]), dtype=np.float32)
+        obs_seq[self.seq_len - len(obs_raw):] = obs_raw
+        obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, seq_len, D)
 
         with torch.no_grad():
             Q_shade, Q_eta = self.online(obs_t)  # (1, cur_len, ...)
@@ -608,7 +612,10 @@ def evaluate(
 
         while not done:
             obs_deque.append(obs.astype(np.float32))
-            obs_seq = np.stack(list(obs_deque))
+            obs_raw = np.stack(list(obs_deque))
+            # Left-pad to seq_len to match replay buffer and TRONformerAgent format
+            obs_seq = np.zeros((seq_len, obs_raw.shape[1]), dtype=np.float32)
+            obs_seq[seq_len - len(obs_raw):] = obs_raw
             obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(device)
             with torch.no_grad():
                 Q_shade, Q_eta = policy(obs_t)   # (1, n_bins) from CLS
