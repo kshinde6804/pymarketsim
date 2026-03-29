@@ -12,7 +12,8 @@ Architecture (§4.1):
                        applied to Q and K inside each attention block.
                        CLS occupies position 0; observation tokens follow
                        at positions 1..seq_len.
-    N=2 Pre-LN blocks: x = x + MHA_RoPE(LN(x))   [NO causal mask — encoder-only]
+    N=2 Pre-LN blocks: x = x + MHA_RoPE(LN(x))   [partial causal mask: CLS bidirecitonal,
+                                                    obs tokens causal (attend to CLS + past)]
                        x = x + FFN(LN(x))          [ffn_hidden=512=4×d_model, h=8 heads]
     Dueling heads:     V: Linear(128→1)
                        Adv shade: Linear(128→128)→ReLU→Linear(128→42)
@@ -154,14 +155,17 @@ class MultiheadSelfAttentionWithRoPE(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
         attn_mask: Optional[torch.Tensor] = None,
+        key_pad_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass with RoPE-rotated Q and K.
 
         Args:
-            x:         (batch, seq_len, d_model)
-            cos:       (seq_len, d_head) — pre-computed by RotaryEmbedding
-            sin:       (seq_len, d_head)
-            attn_mask: (seq_len, seq_len) additive mask (0 / −inf), optional.
+            x:            (batch, seq_len, d_model)
+            cos:          (seq_len, d_head) — pre-computed by RotaryEmbedding
+            sin:          (seq_len, d_head)
+            attn_mask:    (seq_len, seq_len) additive mask (0 / −inf), optional.
+            key_pad_mask: (batch, 1, 1, seq_len) additive mask (0 / −inf) that
+                          blocks attention to zero-padded key positions, optional.
 
         Returns:
             (batch, seq_len, d_model)
@@ -187,6 +191,8 @@ class MultiheadSelfAttentionWithRoPE(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) * scale    # (B, H, T, T)
         if attn_mask is not None:
             scores = scores + attn_mask                          # broadcast over B, H
+        if key_pad_mask is not None:
+            scores = scores + key_pad_mask                       # broadcast over H, T_q
         weights = scores.softmax(dim=-1)
         out = torch.matmul(weights, v)                           # (B, H, T, d_head)
 
@@ -231,20 +237,22 @@ class PreLNTransformerBlock(nn.Module):
         cos: torch.Tensor,
         sin: torch.Tensor,
         attn_mask: Optional[torch.Tensor] = None,
+        key_pad_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass through one Pre-LN transformer block.
 
         Args:
-            x:         (batch, seq_len, d_model)
-            cos:       (seq_len, d_head) — RoPE cosine table from RotaryEmbedding
-            sin:       (seq_len, d_head) — RoPE sine table from RotaryEmbedding
-            attn_mask: Additive causal mask (seq_len, seq_len) with 0 / -inf.
+            x:            (batch, seq_len, d_model)
+            cos:          (seq_len, d_head) — RoPE cosine table from RotaryEmbedding
+            sin:          (seq_len, d_head) — RoPE sine table from RotaryEmbedding
+            attn_mask:    Additive causal mask (seq_len, seq_len) with 0 / -inf.
+            key_pad_mask: (batch, 1, 1, seq_len) additive mask blocking padded keys.
 
         Returns:
             (batch, seq_len, d_model)
         """
         normed = self.norm1(x)
-        attn_out = self.attn(normed, cos, sin, attn_mask=attn_mask)
+        attn_out = self.attn(normed, cos, sin, attn_mask=attn_mask, key_pad_mask=key_pad_mask)
         x = x + attn_out
         x = x + self.ffn(self.norm2(x))
         return x
@@ -348,6 +356,24 @@ class TRONformerPolicy(nn.Module):
 
         batch, seq_len, _ = x.shape
 
+        # Key-padding mask: left-padded sequences have all-zero rows for padding.
+        # input_proj has a bias, so zero inputs project to non-zero d_model vectors;
+        # we must prevent real tokens from attending to these padded positions.
+        # pad_mask[b, t] = True  ⟹  position t in batch b is zero-padding.
+        pad_mask = (x.abs().sum(dim=-1) == 0)          # (batch, seq_len), bool
+        # CLS token is never padding
+        cls_not_pad = pad_mask.new_zeros(batch, 1)      # (batch, 1), all False
+        key_pad_mask_bool = torch.cat(
+            [cls_not_pad, pad_mask], dim=1
+        )                                               # (batch, seq_len+1)
+        # Additive float mask: 0.0 for real tokens, -inf for padded keys
+        key_pad_additive = torch.zeros(
+            batch, 1, 1, seq_len + 1, device=x.device
+        )                                               # (batch, 1, 1, total_len)
+        key_pad_additive = key_pad_additive.masked_fill(
+            key_pad_mask_bool.unsqueeze(1).unsqueeze(2), float("-inf")
+        )
+
         # Project observations to d_model
         h = self.input_proj(x)  # (batch, seq_len, d_model)
 
@@ -369,9 +395,9 @@ class TRONformerPolicy(nn.Module):
         )
         attn_mask[0, :] = 0.0  # CLS row: attend to all
 
-        # Transformer blocks
+        # Transformer blocks — pass both causal mask and key-padding mask
         for block in self.blocks:
-            h = block(h, cos, sin, attn_mask)
+            h = block(h, cos, sin, attn_mask, key_pad_mask=key_pad_additive)
 
         h = self.final_norm(h)
 
