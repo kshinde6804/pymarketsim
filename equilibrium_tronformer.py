@@ -88,7 +88,7 @@ ENV = {
 DEFAULT_MODEL   = "runs/tronformer_v1/best_model.pt"
 DEFAULT_RUNS    = 500
 DEFAULT_N_BG    = 24
-DEFAULT_LAM_ZI  = 0.02
+DEFAULT_LAM_ZI  = 0.005    # matched to background lam → equal participation
 TRONFORMER_LABEL = "TRONformer"
 NORMALIZERS      = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
 BASELINE_CSV     = "results/equilibrium/equilibrium_results.csv"
@@ -160,8 +160,8 @@ def _run_tronformer_cell(args):
             with torch.no_grad():
                 Q_shade, Q_eta = policy(obs_t)            # (1, cur_len, n_*)
 
-            shade_idx = int(Q_shade[0, :].argmax().item())
-            eta_idx   = int(Q_eta[0, :].argmax().item())
+            shade_idx = int(Q_shade[0, -1, :].argmax().item())
+            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
 
             obs, r, terminated, truncated, _ = env.step(
                 np.array([shade_idx, eta_idx])

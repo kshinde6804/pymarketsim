@@ -7,18 +7,19 @@ following Xiong et al. (2020).  The agent maintains a rolling observation buffer
 
 Architecture (§4.1):
     Input projection:  Linear(14 → d_model=128)
-    [CLS] token:       learnable nn.Parameter prepended to the sequence
     Positional enc:    Rotary Position Embeddings (RoPE) [Su et al., 2021]
                        applied to Q and K inside each attention block.
-                       CLS occupies position 0; observation tokens follow
-                       at positions 1..seq_len.
-    N=2 Pre-LN blocks: x = x + MHA_RoPE(LN(x))   [partial causal mask: CLS bidirecitonal,
-                                                    obs tokens causal (attend to CLS + past)]
+                       Observation tokens at positions 0..seq_len-1; most recent
+                       obs is always at position seq_len-1 (largest RoPE distance
+                       from position 0 gives correct recency bias in causal attn).
+    N=2 Pre-LN blocks: x = x + MHA_RoPE(LN(x))   [standard causal mask; token t
+                                                    attends to tokens 0..t only]
                        x = x + FFN(LN(x))          [ffn_hidden=512=4×d_model, h=8 heads]
     Dueling heads:     V: Linear(128→1)
                        Adv shade: Linear(128→128)→ReLU→Linear(128→42)
                        Adv eta:   Linear(128→128)→ReLU→Linear(128→2)
                        Q = V + A − mean(A)  (independently for shade and eta)
+                       Applied at ALL positions; inference reads Q[:, -1, :] (last).
 
 Observation features (14-dim, identical to TRONAgent):
     [0]  time_left
@@ -295,15 +296,13 @@ class TRONformerPolicy(nn.Module):
             self.SHADE_BINS = np.asarray(shade_bins)
             n_shade_bins = len(self.SHADE_BINS)
 
-        # Learnable [CLS] token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
-        nn.init.normal_(self.cls_token, std=0.02)
-
         # Input projection
         self.input_proj = nn.Linear(input_dim, d_model)
 
         # Rotary positional embeddings — shared across all blocks.
         # d_head = d_model // n_heads = 128 // 8 = 16.
+        # Positions 0..seq_len-1; most recent obs at seq_len-1 so it has the
+        # correct recency ordering in causal attention (recent = small distance).
         self.rope = RotaryEmbedding(d_head=d_model // n_heads)
 
         # N Pre-LN transformer blocks
@@ -328,28 +327,26 @@ class TRONformerPolicy(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through input projection → transformer → CLS dueling heads.
+        """Forward pass through input projection → transformer → per-position dueling heads.
 
-        Architecture (paper §4.1):
-          1. Linear-project observations to d_model.
-          2. Prepend learnable [CLS] token.
-          3. Compute RoPE cos/sin tables for positions 0..seq_len:
-               - Position 0 → CLS token.
-               - Positions 1..seq_len → observation tokens.
-             RoPE is applied to Q and K inside each attention block.
-          4. Pass through N Pre-LN transformer blocks with a modified causal mask:
-               - CLS (row 0): attends to ALL tokens — global context aggregator.
-               - Obs token t (row t+1): causal — attends to CLS + obs tokens 0..t.
-             This ensures obs tokens never see future market states, while CLS
-             accumulates the full rolling context.
-          5. Policy derived from h_CLS = h[:, 0, :] via dueling heads.
+        Returns Q-values at every sequence position.
+          - Inference: read Q[:, -1, :] (most recent position, full causal context).
+          - Per-sequence training: read Q[:, burnin:burnin+L, :] over the learning
+            window.
+
+        RoPE positions 0..seq_len-1. With left-padded sequences the most recent
+        obs is always at position seq_len-1.  Token t attends causally to tokens
+        0..t; for token seq_len-1 (current step) the RoPE angular distance to
+        token seq_len-2 is 1, to token 0 is seq_len-1.  This gives the correct
+        recency bias: recent observations have smaller angular distance → higher
+        relative attention weight.
 
         Args:
             x: (batch, seq_len, input_dim) or (batch, input_dim) for single step.
 
         Returns:
-            Q_shade: (batch, n_shade_bins)  — Q-values from CLS representation
-            Q_eta:   (batch, n_eta_bins)
+            Q_shade: (batch, seq_len, n_shade_bins)
+            Q_eta:   (batch, seq_len, n_eta_bins)
         """
         if x.dim() == 2:
             x = x.unsqueeze(1)
@@ -358,62 +355,43 @@ class TRONformerPolicy(nn.Module):
 
         # Key-padding mask: left-padded sequences have all-zero rows for padding.
         # input_proj has a bias, so zero inputs project to non-zero d_model vectors;
-        # we must prevent real tokens from attending to these padded positions.
-        # pad_mask[b, t] = True  ⟹  position t in batch b is zero-padding.
+        # prevent real tokens from attending to these padded positions.
         pad_mask = (x.abs().sum(dim=-1) == 0)          # (batch, seq_len), bool
-        # CLS token is never padding
-        cls_not_pad = pad_mask.new_zeros(batch, 1)      # (batch, 1), all False
-        key_pad_mask_bool = torch.cat(
-            [cls_not_pad, pad_mask], dim=1
-        )                                               # (batch, seq_len+1)
-        # Additive float mask: 0.0 for real tokens, -inf for padded keys
         key_pad_additive = torch.zeros(
-            batch, 1, 1, seq_len + 1, device=x.device
-        )                                               # (batch, 1, 1, total_len)
+            batch, 1, 1, seq_len, device=x.device
+        )                                               # (batch, 1, 1, seq_len)
         key_pad_additive = key_pad_additive.masked_fill(
-            key_pad_mask_bool.unsqueeze(1).unsqueeze(2), float("-inf")
+            pad_mask.unsqueeze(1).unsqueeze(2), float("-inf")
         )
 
         # Project observations to d_model
         h = self.input_proj(x)  # (batch, seq_len, d_model)
 
-        # Prepend CLS token → (batch, seq_len+1, d_model)
-        cls = self.cls_token.expand(batch, 1, self.d_model)
-        h = torch.cat([cls, h], dim=1)
+        # RoPE: positions 0..seq_len-1.
+        cos, sin = self.rope(seq_len, x.device)  # each (seq_len, d_head)
 
-        # RoPE: positions 0..seq_len (CLS=0, obs_1..obs_seq_len follow).
-        total_len = seq_len + 1
-        cos, sin = self.rope(total_len, x.device)  # each (total_len, d_head)
-
-        # Modified causal mask:
-        #   - Row 0 (CLS): no masking — CLS attends to every token.
-        #   - Rows 1..T (obs): standard upper-triangular causal mask so obs_t
-        #     attends only to CLS + obs tokens at positions ≤ t.
+        # Standard causal mask: token t attends only to tokens 0..t.
         attn_mask = torch.triu(
-            torch.full((total_len, total_len), float("-inf"), device=x.device),
+            torch.full((seq_len, seq_len), float("-inf"), device=x.device),
             diagonal=1,
         )
-        attn_mask[0, :] = 0.0  # CLS row: attend to all
 
-        # Transformer blocks — pass both causal mask and key-padding mask
+        # Transformer blocks
         for block in self.blocks:
             h = block(h, cos, sin, attn_mask, key_pad_mask=key_pad_additive)
 
-        h = self.final_norm(h)
+        h = self.final_norm(h)  # (batch, seq_len, d_model)
 
-        # Policy from CLS token (position 0) — paper §4.1: "h_CLS is used to
-        # calculate the policy of the TRONformer."
-        h_cls = h[:, 0, :]  # (batch, d_model)
+        # Dueling heads at ALL positions.
+        # Q = V + A − mean(A), applied independently for shade and eta.
+        V       = self.value_head(h)   # (batch, seq_len, 1)
+        A_shade = self.adv_shade(h)    # (batch, seq_len, n_shade_bins)
+        A_eta   = self.adv_eta(h)      # (batch, seq_len, n_eta_bins)
 
-        # Dueling: Q = V + A − mean(A)
-        V       = self.value_head(h_cls)       # (batch, 1)
-        A_shade = self.adv_shade(h_cls)        # (batch, n_shade_bins)
-        A_eta   = self.adv_eta(h_cls)          # (batch, n_eta_bins)
+        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)
+        Q_eta   = V + A_eta   - A_eta.mean(dim=-1, keepdim=True)
 
-        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)  # (batch, n_shade_bins)
-        Q_eta   = V + A_eta   - A_eta.mean(dim=-1, keepdim=True)    # (batch, n_eta_bins)
-
-        return Q_shade, Q_eta
+        return Q_shade, Q_eta  # (batch, seq_len, n_shade), (batch, seq_len, n_eta)
 
 
 # ── TRONformerAgent ───────────────────────────────────────────────────────────
@@ -579,11 +557,11 @@ class TRONformerAgent(ZIAgent):
         obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, 14)
 
         with torch.no_grad():
-            Q_shade, Q_eta = self.policy(obs_t)  # (1, cur_len, 42), (1, cur_len, 2)
+            Q_shade, Q_eta = self.policy(obs_t)  # (1, seq_len, n_shade), (1, seq_len, n_eta)
 
-        # Q-values from CLS token — shape (1, n_bins)
-        shade_idx = int(Q_shade[0, :].argmax().item())
-        eta_idx   = int(Q_eta[0, :].argmax().item())
+        # Q-values from most recent position (seq_len-1) — full causal context
+        shade_idx = int(Q_shade[0, -1, :].argmax().item())
+        eta_idx   = int(Q_eta[0, -1, :].argmax().item())
 
         shade_val = float(self.policy.SHADE_BINS[shade_idx])
         eta = float(TRONformerPolicy.ETA_BINS[eta_idx])
