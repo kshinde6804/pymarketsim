@@ -4,15 +4,15 @@
 # Phase 2: Train skewed + uniform TRONformer vs identified NE strategy
 # Phase 3: Evaluate both models in same environment
 #
-# Env C params: lam=0.012, shock-var=2e4, pv-var=2e6, n-bg=24 (matched arrival rates)
+# Env C params: lam=0.012, shock-var=2e4, pv-var=2e7, n-bg=24 (matched arrival rates)
 
 PYTHON="venv/bin/python"
 LOG="runs_phase3_envC.log"
 
-ENV_ARGS="--lam 0.012 --shock-var 2e4 --pv-var 2e6"
-NE_ENV_ARGS="--lam 0.012 --shock-var 2e4 --pv-var 2e6 --n-bg 24"
-TRAIN_COMMON="--n-bg 24 --lam 0.012 --lam-zi 0.012 --shock-var 2e4 --pv-var 2e6 --n-layers 2 --batch-size 512"
-EVAL_COMMON="--num-runs 500 --n-bg 24 --lam-market 0.012 --lam-zi 0.012 --shock-var 2e4 --pv-var 2e6 --n-layers 2 --bg-only"
+ENV_ARGS="--lam 0.012 --shock-var 2e4 --pv-var 2e7"
+NE_ENV_ARGS="--lam 0.012 --shock-var 2e4 --pv-var 2e7 --n-bg 24"
+TRAIN_COMMON="--n-bg 24 --lam 0.012 --lam-zi 0.012 --shock-var 2e4 --pv-var 2e7 --n-layers 2 --batch-size 512"
+EVAL_COMMON="--num-runs 500 --n-bg 24 --lam-market 0.012 --lam-zi 0.012 --shock-var 2e4 --pv-var 2e7 --n-layers 2 --bg-only"
 
 for seed in 123 456; do
   echo "" | tee -a $LOG
