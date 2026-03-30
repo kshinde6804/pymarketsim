@@ -1,0 +1,40 @@
+Loading ZI×ZI baseline from results/ne_search/ne_envC_nb24_s456_abs_mean.csv ...
+  Loaded 10×10 matrix.
+
+TRONformer deviator:  10 cells  |  500 runs/cell  |  5,000 total simulations  |  10 processes
+  Model: runs/tronformer_ne24_s8_envC_seed123_skewed/best_model.pt
+  ENV: lam=0.012, lam_zi=0.02, sim_time=2000, n_bg=24.
+
+TRONformer cells completed:   0%|          | 0/10 [00:00<?, ?it/s]TRONformer cells completed:   0%|          | 0/10 [00:02<?, ?it/s]
+multiprocessing.pool.RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/Users/kshin/.pyenv/versions/3.12.2/lib/python3.12/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+                    ^^^^^^^^^^^^^^^^^^^
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 120, in _run_tronformer_cell
+    policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
+  File "/Users/kshin/Documents/GitHub/pymarketsim/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 2635, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for TRONformerPolicy:
+	Missing key(s) in state_dict: "rope.inv_freq", "rope.cos_cached", "rope.sin_cached", "blocks.0.attn.qkv_proj.weight", "blocks.0.attn.qkv_proj.bias", "blocks.1.attn.qkv_proj.weight", "blocks.1.attn.qkv_proj.bias". 
+	Unexpected key(s) in state_dict: "pos_enc.pe", "blocks.0.attn.in_proj_weight", "blocks.0.attn.in_proj_bias", "blocks.1.attn.in_proj_weight", "blocks.1.attn.in_proj_bias". 
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 441, in <module>
+    main()
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 421, in main
+    tronformer_column = run_tronformer_column(
+                        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/kshin/Documents/GitHub/pymarketsim/equilibrium_tronformer.py", line 225, in run_tronformer_column
+    for bg_idx, tf_mean in tqdm(
+  File "/Users/kshin/Documents/GitHub/pymarketsim/venv/lib/python3.12/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/Users/kshin/.pyenv/versions/3.12.2/lib/python3.12/multiprocessing/pool.py", line 873, in next
+    raise value
+RuntimeError: Error(s) in loading state_dict for TRONformerPolicy:
+	Missing key(s) in state_dict: "rope.inv_freq", "rope.cos_cached", "rope.sin_cached", "blocks.0.attn.qkv_proj.weight", "blocks.0.attn.qkv_proj.bias", "blocks.1.attn.qkv_proj.weight", "blocks.1.attn.qkv_proj.bias". 
+	Unexpected key(s) in state_dict: "pos_enc.pe", "blocks.0.attn.in_proj_weight", "blocks.0.attn.in_proj_bias", "blocks.1.attn.in_proj_weight", "blocks.1.attn.in_proj_bias". 

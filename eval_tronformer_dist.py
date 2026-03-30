@@ -13,13 +13,103 @@ import collections
 import multiprocessing as mp
 import os
 
+import math
+
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 from tqdm import tqdm
 
 from marketsim.agent.tronformer_agent import TRONformerPolicy, SEQ_LEN
 from marketsim.wrappers.tron_env import TRONEnv
+
+
+# ── Legacy (sinusoidal PE) architecture — for checkpoints before RoPE migration ──
+
+class _LegacyPositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, max_len: int = 512):
+        super().__init__()
+        pe = torch.zeros(1, max_len, d_model)
+        position = torch.arange(max_len).unsqueeze(1).float()
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        )
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        return x + self.pe[:, : x.size(1), :]
+
+
+class _LegacyPreLNBlock(nn.Module):
+    def __init__(self, d_model=128, n_heads=8, ffn_hidden=512):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, ffn_hidden), nn.ReLU(), nn.Linear(ffn_hidden, d_model)
+        )
+
+    def forward(self, x, attn_mask=None):
+        normed = self.norm1(x)
+        attn_out, _ = self.attn(normed, normed, normed, attn_mask=attn_mask)
+        x = x + attn_out
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+
+class TRONformerPolicyLegacy(nn.Module):
+    """TRONformerPolicy with sinusoidal PE — compatible with pre-RoPE checkpoints."""
+
+    def __init__(self, input_dim=14, d_model=128, n_heads=8, n_layers=2,
+                 ffn_hidden=512, shade_bins=None, n_shade_bins=42, n_eta_bins=2):
+        super().__init__()
+        self.d_model = d_model
+        if shade_bins is not None:
+            n_shade_bins = len(shade_bins)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        nn.init.normal_(self.cls_token, std=0.02)
+        self.input_proj = nn.Linear(input_dim, d_model)
+        self.pos_enc = _LegacyPositionalEncoding(d_model)
+        self.blocks = nn.ModuleList(
+            [_LegacyPreLNBlock(d_model, n_heads, ffn_hidden) for _ in range(n_layers)]
+        )
+        self.final_norm = nn.LayerNorm(d_model)
+        self.value_head = nn.Linear(d_model, 1)
+        self.adv_shade = nn.Sequential(
+            nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, n_shade_bins)
+        )
+        self.adv_eta = nn.Sequential(
+            nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, n_eta_bins)
+        )
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        batch, seq_len, _ = x.shape
+        h = self.input_proj(x)
+        cls = self.cls_token.expand(batch, 1, self.d_model)
+        h = torch.cat([cls, h], dim=1)
+        h = self.pos_enc(h)
+        total_len = seq_len + 1
+        attn_mask = torch.triu(
+            torch.full((total_len, total_len), float("-inf"), device=x.device),
+            diagonal=1,
+        )
+        attn_mask[0, :] = 0.0
+        for block in self.blocks:
+            h = block(h, attn_mask)
+        h = self.final_norm(h)
+        h_cls = h[:, 0, :]
+        V = self.value_head(h_cls)
+        A_shade = self.adv_shade(h_cls)
+        A_eta = self.adv_eta(h_cls)
+        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)
+        Q_eta = V + A_eta - A_eta.mean(dim=-1, keepdim=True)
+        return Q_shade, Q_eta
 
 UNIFORM_SHADE_BINS = np.linspace(0, 600, 42)
 SKEWED_SHADE_BINS = np.concatenate([
@@ -48,15 +138,16 @@ NORMALIZERS = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
 
 
 def _worker(args):
-    """Run a chunk of episodes; return list of per-episode profits."""
+    """Run a chunk of episodes; return list of (tron_profit, mean_bg_profit) per episode."""
     (weights_path, n_runs, n_bg, bg_strategy, lam_zi, n_layers,
-     shade_bins, seed, lam, shock_var, pv_var) = args
+     shade_bins, seed, lam, shock_var, pv_var, legacy) = args
 
     rng = np.random.default_rng(seed)
     torch.manual_seed(int(rng.integers(1 << 31)))
 
     bg = STRATEGIES[bg_strategy]
-    policy = TRONformerPolicy(input_dim=14, n_layers=n_layers, shade_bins=shade_bins)
+    PolicyCls = TRONformerPolicyLegacy if legacy else TRONformerPolicy
+    policy = PolicyCls(input_dim=14, n_layers=n_layers, shade_bins=shade_bins)
     policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
     policy.eval()
 
@@ -78,7 +169,7 @@ def _worker(args):
     )
     env = TRONEnv(**env_kwargs)
 
-    profits = []
+    results = []
     for _ in range(n_runs):
         obs, _ = env.reset()
         obs_buf: collections.deque = collections.deque(maxlen=SEQ_LEN)
@@ -98,8 +189,22 @@ def _worker(args):
             )
             ep_reward += r
             done = terminated or truncated
-        profits.append(ep_reward * NORMALIZERS["reward"])
-    return profits
+        tron_profit = ep_reward * NORMALIZERS["reward"]
+
+        # Compute mean bg agent profit in this same episode.
+        # end_sim() calls get_final_fundamental() = get_value_at(sim_time+1), which sets
+        # latest_t=sim_time+1 and caches that value. Asking for sim_time instead would
+        # trigger a backward generation (dt<0). Use sim_time+1 — same value the RL
+        # agent's terminal reward was computed against.
+        final_fund = env.market.fundamental.get_value_at(env.sim_time + 1)
+        bg_profits = [
+            agent.position * final_fund + agent.cash + agent.get_pos_value()
+            for agent in env.agents.values()
+        ]
+        mean_bg_profit = float(np.mean(bg_profits))
+
+        results.append((tron_profit, mean_bg_profit))
+    return results
 
 
 def main():
@@ -125,6 +230,8 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--output", type=str, default=None,
                    help="Output CSV path (default: auto-generated from model path)")
+    p.add_argument("--legacy", action="store_true",
+                   help="Use sinusoidal PE architecture (pre-RoPE checkpoints)")
     args = p.parse_args()
 
     if args.skew_bins:
@@ -149,48 +256,58 @@ def main():
     tasks = [
         (args.model, chunks[i], args.n_bg, args.bg_strategy,
          args.lam_zi, args.n_layers, shade_bins, seeds[i],
-         lam, shock_var, pv_var)
+         lam, shock_var, pv_var, args.legacy)
         for i in range(n_procs)
     ]
 
     bin_desc = ("skewed[0,600]x42" if args.skew_bins
                 else f"uniform[0,{args.shade_max:.0f}]x{args.n_bins}")
+    arch_desc = "legacy(sinusoidal-PE)" if args.legacy else "current(RoPE)"
     print(f"Running {args.num_runs} episodes across {n_procs} processes")
-    print(f"  Model: {args.model}")
+    print(f"  Model: {args.model}  [{arch_desc}]")
     print(f"  BG: {args.n_bg}x S{args.bg_strategy} ({STRATEGIES[args.bg_strategy]})")
     print(f"  lam={lam}, shock_var={shock_var:.2e}, pv_var={pv_var:.2e}")
     print(f"  lam_zi={args.lam_zi}, n_layers={args.n_layers}, bins={bin_desc}\n")
 
-    all_profits = []
+    all_results = []
     with mp.Pool(n_procs) as pool:
-        for chunk_profits in tqdm(
+        for chunk_results in tqdm(
             pool.imap_unordered(_worker, tasks),
             total=n_procs, desc="Chunks"
         ):
-            all_profits.extend(chunk_profits)
+            all_results.extend(chunk_results)
 
-    profits = np.array(all_profits)
-    n = len(profits)
-    mean = profits.mean()
-    std  = profits.std()
-    se   = std / np.sqrt(n)
-    med  = np.median(profits)
-    t    = mean / se if se > 0 else float('inf')
+    tron_arr = np.array([r[0] for r in all_results])
+    bg_arr   = np.array([r[1] for r in all_results])
+    n = len(tron_arr)
 
-    print(f"\n{'='*58}")
+    def stats(arr):
+        m = arr.mean(); s = arr.std(); se = s / np.sqrt(n)
+        return m, s, se, np.median(arr), m / se if se > 0 else float('inf')
+
+    tm, ts, tse, tmed, tt = stats(tron_arr)
+    bm, bs, bse, bmed, _  = stats(bg_arr)
+    rel = (tm - bm) / abs(bm) * 100 if bm != 0 else float('nan')
+    diff = tm - bm
+    diff_se = np.sqrt(tse**2 + bse**2)
+    t_diff = diff / diff_se if diff_se > 0 else float('inf')
+
+    W = 62
+    print(f"\n{'='*W}")
     print(f"TRONformer vs {args.n_bg}x S{args.bg_strategy} — {n} episodes")
-    print(f"{'='*58}")
-    print(f"  Mean       : {mean:+.2f}")
-    print(f"  Std dev    : {std:.2f}")
-    print(f"  Std error  : {se:.2f}")
-    print(f"  t-stat     : {t:.2f}")
-    print(f"  95% CI     : [{mean - 1.96*se:+.2f}, {mean + 1.96*se:+.2f}]")
-    print(f"  Median     : {med:+.2f}")
-    print(f"  p5 / p25   : {np.percentile(profits, 5):+.2f} / {np.percentile(profits, 25):+.2f}")
-    print(f"  p75 / p95  : {np.percentile(profits, 75):+.2f} / {np.percentile(profits, 95):+.2f}")
-    print(f"  Min / Max  : {profits.min():+.2f} / {profits.max():+.2f}")
-    print(f"  Frac > 0   : {(profits > 0).mean()*100:.1f}%")
-    print(f"{'='*58}")
+    print(f"{'='*W}")
+    print(f"  {'':30s} {'TRONformer':>12}  {'ZI S8 (mean)':>12}")
+    print(f"  {'-'*56}")
+    print(f"  {'Mean profit':30s} {tm:>+12.2f}  {bm:>+12.2f}")
+    print(f"  {'Std dev':30s} {ts:>12.2f}  {bs:>12.2f}")
+    print(f"  {'Std error':30s} {tse:>12.2f}  {bse:>12.2f}")
+    print(f"  {'Median':30s} {tmed:>+12.2f}  {bmed:>+12.2f}")
+    print(f"  {'t-stat (vs 0)':30s} {tt:>12.2f}")
+    print(f"  {'-'*56}")
+    print(f"  {'TRONformer advantage':30s} {diff:>+12.2f}  ({rel:>+.1f}%)")
+    print(f"  {'t-stat (TRONformer vs ZI S8)':30s} {t_diff:>12.2f}")
+    print(f"  {'95% CI (advantage)':30s} [{diff-1.96*diff_se:+.2f}, {diff+1.96*diff_se:+.2f}]")
+    print(f"{'='*W}")
 
     if args.output:
         out = args.output
@@ -200,7 +317,8 @@ def main():
         out = f"results/equilibrium/{run_name}/dist_{n}runs.csv"
 
     os.makedirs(os.path.dirname(out) if os.path.dirname(out) else ".", exist_ok=True)
-    pd.Series(profits, name="profit").to_csv(out, index=False)
+    df_out = pd.DataFrame({"tron_profit": tron_arr, "bg_mean_profit": bg_arr})
+    df_out.to_csv(out, index=False)
     print(f"\nPer-episode profits saved to {out}")
 
 

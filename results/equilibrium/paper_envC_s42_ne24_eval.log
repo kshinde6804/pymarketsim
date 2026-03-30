@@ -1,0 +1,57 @@
+Running 2000 episodes across 8 processes
+  Model: runs/tronformer_ne24_envC_rope_seed42_skewed/best_model.pt  [current(RoPE)]
+  BG: 24x S8 ({'shade': [460, 540], 'eta': 0.5})
+  lam=0.012, shock_var=2.00e+04, pv_var=2.00e+07
+  lam_zi=0.012, n_layers=2, bins=skewed[0,600]x42
+
+Chunks:   0%|          | 0/8 [00:00<?, ?it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Chunks:  12%|█▎        | 1/8 [00:24<02:48, 24.08s/it]Chunks:  25%|██▌       | 2/8 [00:24<01:00, 10.03s/it]Chunks:  62%|██████▎   | 5/8 [00:24<00:08,  2.87s/it]Chunks:  88%|████████▊ | 7/8 [00:25<00:01,  1.88s/it]Chunks: 100%|██████████| 8/8 [00:25<00:00,  3.16s/it]
+
+==============================================================
+TRONformer vs 24x S8 — 2000 episodes
+==============================================================
+                                   TRONformer  ZI S8 (mean)
+  --------------------------------------------------------
+  Mean profit                         +981.85      +1277.09
+  Std dev                             2201.36        366.96
+  Std error                             49.22          8.21
+  Median                              +578.95      +1254.67
+  t-stat (vs 0)                         19.95
+  --------------------------------------------------------
+  TRONformer advantage                -295.23  (-23.1%)
+  t-stat (TRONformer vs ZI S8)          -5.92
+  95% CI (advantage)             [-393.04, -197.42]
+==============================================================
+
+Per-episode profits saved to results/equilibrium/paper_envC_s42_ne24_eval.csv

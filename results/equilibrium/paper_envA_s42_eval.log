@@ -1,0 +1,72 @@
+
+Evaluating TRON vs ZI (Env B)
+  Model:       runs/tron_paper_envA_s42/best_model.pt
+  BG strategy: S8 (shade=[460, 540], eta=0.5)
+  n_bg:        24  (N=25 total agents)
+  Runs:        2000  |  Processes: 12
+  ENV:  lam=0.0005, shock_var=1000000.0, pv_var=5000000.0
+
+simulations:   0%|          | 0/2000 [00:00<?, ?it/s]simulations:   0%|          | 1/2000 [00:02<1:14:38,  2.24s/it]simulations:   0%|          | 2/2000 [00:02<35:18,  1.06s/it]  /Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:   0%|          | 6/2000 [00:02<08:45,  3.79it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:   1%|          | 13/2000 [00:02<03:21,  9.88it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:   2%|▏         | 37/2000 [00:02<00:54, 35.81it/s]simulations:   5%|▍         | 94/2000 [00:02<00:17, 110.35it/s]simulations:   6%|▋         | 127/2000 [00:03<00:12, 144.67it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:   8%|▊         | 160/2000 [00:03<00:10, 175.39it/s]simulations:   9%|▉         | 188/2000 [00:03<00:09, 195.57it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:  11%|█         | 217/2000 [00:03<00:08, 217.10it/s]/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+simulations:  12%|█▏        | 246/2000 [00:03<00:07, 231.61it/s]simulations:  14%|█▍        | 280/2000 [00:03<00:06, 259.22it/s]simulations:  16%|█▌        | 310/2000 [00:03<00:06, 265.57it/s]simulations:  17%|█▋        | 341/2000 [00:03<00:06, 273.96it/s]simulations:  19%|█▉        | 377/2000 [00:03<00:05, 297.63it/s]simulations:  20%|██        | 409/2000 [00:04<00:05, 267.14it/s]simulations:  22%|██▏       | 445/2000 [00:04<00:05, 291.56it/s]simulations:  24%|██▍       | 480/2000 [00:04<00:05, 296.56it/s]simulations:  26%|██▌       | 515/2000 [00:04<00:04, 311.17it/s]simulations:  27%|██▋       | 547/2000 [00:04<00:04, 304.38it/s]simulations:  29%|██▉       | 582/2000 [00:04<00:04, 307.78it/s]simulations:  31%|███       | 616/2000 [00:04<00:04, 295.22it/s]simulations:  33%|███▎      | 655/2000 [00:04<00:04, 316.90it/s]simulations:  35%|███▍      | 693/2000 [00:04<00:03, 327.09it/s]simulations:  36%|███▋      | 727/2000 [00:04<00:03, 327.97it/s]simulations:  38%|███▊      | 761/2000 [00:05<00:03, 321.45it/s]simulations:  40%|███▉      | 794/2000 [00:05<00:03, 321.57it/s]simulations:  41%|████▏     | 827/2000 [00:05<00:03, 307.07it/s]simulations:  43%|████▎     | 867/2000 [00:05<00:03, 328.10it/s]simulations:  45%|████▌     | 905/2000 [00:05<00:03, 325.08it/s]simulations:  47%|████▋     | 938/2000 [00:05<00:03, 326.01it/s]simulations:  49%|████▊     | 971/2000 [00:05<00:03, 324.58it/s]simulations:  50%|█████     | 1005/2000 [00:05<00:03, 320.72it/s]simulations:  52%|█████▏    | 1040/2000 [00:05<00:02, 323.42it/s]simulations:  54%|█████▍    | 1075/2000 [00:06<00:02, 329.67it/s]simulations:  55%|█████▌    | 1109/2000 [00:06<00:02, 323.32it/s]simulations:  57%|█████▋    | 1142/2000 [00:06<00:02, 314.96it/s]simulations:  59%|█████▊    | 1174/2000 [00:06<00:02, 308.68it/s]simulations:  60%|██████    | 1205/2000 [00:06<00:02, 297.67it/s]simulations:  62%|██████▏   | 1235/2000 [00:06<00:02, 298.07it/s]simulations:  64%|██████▎   | 1270/2000 [00:06<00:02, 308.78it/s]simulations:  65%|██████▌   | 1305/2000 [00:06<00:02, 315.27it/s]simulations:  67%|██████▋   | 1338/2000 [00:06<00:02, 315.78it/s]simulations:  68%|██████▊   | 1370/2000 [00:07<00:02, 293.74it/s]simulations:  71%|███████   | 1414/2000 [00:07<00:01, 318.66it/s]simulations:  73%|███████▎  | 1451/2000 [00:07<00:01, 329.01it/s]simulations:  74%|███████▍  | 1485/2000 [00:07<00:01, 291.15it/s]simulations:  76%|███████▌  | 1515/2000 [00:07<00:01, 285.92it/s]simulations:  78%|███████▊  | 1551/2000 [00:07<00:01, 243.20it/s]simulations:  80%|████████  | 1605/2000 [00:07<00:01, 308.94it/s]simulations:  82%|████████▏ | 1643/2000 [00:07<00:01, 305.52it/s]simulations:  84%|████████▍ | 1680/2000 [00:08<00:01, 319.77it/s]simulations:  86%|████████▌ | 1714/2000 [00:08<00:00, 324.01it/s]simulations:  87%|████████▋ | 1748/2000 [00:08<00:00, 326.46it/s]simulations:  89%|████████▉ | 1782/2000 [00:08<00:00, 320.15it/s]simulations:  91%|█████████ | 1816/2000 [00:08<00:00, 317.67it/s]simulations:  93%|█████████▎| 1851/2000 [00:08<00:00, 321.11it/s]simulations:  94%|█████████▍| 1884/2000 [00:08<00:00, 318.28it/s]simulations:  96%|█████████▌| 1922/2000 [00:08<00:00, 328.02it/s]simulations:  98%|█████████▊| 1955/2000 [00:08<00:00, 318.84it/s]simulations:  99%|█████████▉| 1987/2000 [00:09<00:00, 317.70it/s]simulations: 100%|██████████| 2000/2000 [00:09<00:00, 221.00it/s]
+
+============================================================
+RESULTS  —  Environment B  (lam=0.005, shock_var=1e6, pv_var=5e6)
+NE Background: S8 (shade=[460,540], eta=0.5), n_bg=24
+Runs: 2000
+============================================================
+  ZI  avg profit:     426.4  ±13.2
+  TRON profit:        545.9  ±300.0
+  TRON advantage:  +28.0%
+------------------------------------------------------------
+  Paper (Table 3, Env B):  ZI=152, TRON=170  (+12%)
+============================================================
+
+Per-run results saved to results/equilibrium/paper_envA_s42_eval.csv
+Summary saved to results/equilibrium/paper_envA_s42_eval_summary.csv
