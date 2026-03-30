@@ -1,0 +1,78 @@
+
+######################################################################
+### SEED 42 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sat Mar 28 19:03:05 EDT 2026 ===
+
+######################################################################
+### SEED 42 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sat Mar 28 19:03:09 EDT 2026 ===
+=== Phase 1 done: Sat Mar 28 19:09:40 EDT 2026 ===
+=== Identified NE strategy: S6 ===
+
+### SEED 42 — Phase 2: Train TRONformer (skewed + uniform)      ###
+=== Phase 2 (ne24_envC_rope_seed42_skewed) start: Sat Mar 28 19:09:40 EDT 2026 ===
+=== Phase 1 done: Sat Mar 28 19:09:41 EDT 2026 ===
+=== Identified NE strategy: S6 ===
+
+### SEED 42 — Phase 2: Train TRONformer (skewed + uniform)      ###
+=== Phase 2 (ne24_envC_rope_seed42_skewed) start: Sat Mar 28 19:09:41 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed42_skewed) done: Sat Mar 28 19:09:44 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed42_uniform) start: Sat Mar 28 19:09:44 EDT 2026 ===
+
+######################################################################
+### SEED 42 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sat Mar 28 19:12:21 EDT 2026 ===
+
+######################################################################
+### SEED 42 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sat Mar 28 19:12:34 EDT 2026 ===
+
+######################################################################
+### SEED 123 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sat Mar 28 19:15:33 EDT 2026 ===
+=== Phase 1 done: Sat Mar 28 19:17:48 EDT 2026 ===
+=== Identified NE strategy: S6 ===
+
+### SEED 42 — Phase 2: Train TRONformer (skewed + uniform)      ###
+=== Phase 2 (ne24_envC_rope_seed42_skewed) start: Sat Mar 28 19:17:48 EDT 2026 ===
+=== Phase 1 done: Sat Mar 28 19:18:21 EDT 2026 ===
+=== Identified NE strategy: S6 ===
+
+### SEED 123 — Phase 2: Train TRONformer (skewed + uniform)      ###
+=== Phase 2 (ne24_envC_rope_seed123_skewed) start: Sat Mar 28 19:18:21 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed42_skewed) done: Sun Mar 29 00:48:42 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed42_uniform) start: Sun Mar 29 00:48:42 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed123_skewed) done: Sun Mar 29 01:28:43 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed123_uniform) start: Sun Mar 29 01:28:43 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed123_uniform) done: Sun Mar 29 07:39:37 EDT 2026 ===
+
+### SEED 123 — Phase 3: Evaluate both models                     ###
+=== Phase 3 (ne24_envC_rope_seed123_skewed) start: Sun Mar 29 07:39:37 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed42_uniform) done: Sun Mar 29 08:01:45 EDT 2026 ===
+
+### SEED 42 — Phase 3: Evaluate both models                     ###
+=== Phase 3 (ne24_envC_rope_seed42_skewed) start: Sun Mar 29 08:01:45 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed123_skewed) done: Sun Mar 29 08:14:54 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed123_uniform) start: Sun Mar 29 08:14:54 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed42_skewed) done: Sun Mar 29 08:22:35 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed42_uniform) start: Sun Mar 29 08:22:35 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed42_uniform) done: Sun Mar 29 08:35:47 EDT 2026 ===
+=== Seed 42 complete: Sun Mar 29 08:35:47 EDT 2026 ===
+=== Phase 3 (ne24_envC_rope_seed123_uniform) done: Sun Mar 29 08:51:49 EDT 2026 ===
+=== Seed 123 complete: Sun Mar 29 08:51:49 EDT 2026 ===
+
+######################################################################
+### SEED 456 — Phase 1: NE Search                                ###
+######################################################################
+=== Phase 1 start: Sun Mar 29 08:51:49 EDT 2026 ===
+=== Phase 1 done: Sun Mar 29 08:54:35 EDT 2026 ===
+=== Identified NE strategy: S6 ===
+
+### SEED 456 — Phase 2: Train TRONformer (skewed + uniform)      ###
+=== Phase 2 (ne24_envC_rope_seed456_skewed) start: Sun Mar 29 08:54:35 EDT 2026 ===
+=== Phase 2 (ne24_envC_rope_seed456_skewed) start: Sun Mar 29 13:55:55 EDT 2026 ===

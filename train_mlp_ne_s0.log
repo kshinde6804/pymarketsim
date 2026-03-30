@@ -1,0 +1,27 @@
+
+NE background strategy: S0  {'shade': [0, 450], 'eta': 0.5}
+Run directory: runs/sac_zi_ne_s0_ne_s0
+
+[1/4] Evaluating ZI baseline strategies in NE environment...
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  ZI-NE     (shade=[0, 450], η=0.5)  mean=+2.808  std=9.604
+  ZI-tight  (shade=[90,110],   η=0.5)  mean=+1.110  std=11.483
+  ZI-medium (shade=[250,350],  η=0.5)  mean=+2.655  std=11.301
+  ZI-wide   (shade=[380,420],  η=1.0)  mean=-1.429  std=10.323
+
+[2/4] Setting up environments...
+  Using 4 parallel training environments (DummyVecEnv)
+
+[3/4] Training SAC agent...
+       ne_strategy   : S0  {'shade': [0, 450], 'eta': 0.5}
+       timesteps     : 2,000,000
+       n_envs        : 4
+       eval_freq     : 10,000
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)

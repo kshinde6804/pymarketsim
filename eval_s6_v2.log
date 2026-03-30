@@ -1,0 +1,48 @@
+
+PHASE 3 (LARGE): MLP vs NE Strategy Evaluation
+  NE strategy    : S6  {'shade': [380, 420], 'eta': 0.5}
+  Model          : runs/sac_zi_ne_large_s6_v2/best_model
+  Background     : 24 agents
+  Runs per cell  : 2,000
+  Total sims     : 22,000  (10 ZI + 1 MLP)
+  Processes      : 11
+
+Running ZI deviators vs NE background...
+ZI cells:   0%|          | 0/10 [00:00<?, ?it/s]ZI cells:  10%|█         | 1/10 [02:26<21:57, 146.36s/it]ZI cells:  20%|██        | 2/10 [02:26<08:02, 60.37s/it] ZI cells:  70%|███████   | 7/10 [02:26<00:34, 11.64s/it]ZI cells:  90%|█████████ | 9/10 [02:26<00:07,  7.99s/it]ZI cells:  90%|█████████ | 9/10 [02:39<00:07,  7.99s/it]ZI cells: 100%|██████████| 10/10 [04:00<00:00, 23.76s/it]ZI cells: 100%|██████████| 10/10 [04:00<00:00, 24.06s/it]
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+Running MLP deviator vs NE background...
+
+================================================================================
+RESULTS: Deviator profit vs S6 background  ({'shade': [380, 420], 'eta': 0.5})  [24 BG agents]
+      Deviator │  Mean Profit │        ±SE │ Best?
+───────────────────────────────────────────────────────
+  ZI S 0 [0, 450]  │        513.0 │      302.5 │
+  ZI S 1 [0, 600]  │        429.6 │      293.6 │
+  ZI S 2 [90, 110]  │        361.6 │      316.2 │
+  ZI S 3 [140, 160]  │        390.6 │      310.4 │
+  ZI S 4 [190, 210]  │        521.4 │      305.4 │
+  ZI S 5 [280, 320]  │        447.7 │      295.0 │
+  ZI S 6 [380, 420]  │        479.6 │      276.6 │ (NE diag)
+  ZI S 7 [380, 420]  │        397.6 │      272.4 │
+  ZI S 8 [460, 540]  │        528.9 │      257.0 │ ← best ZI
+  ZI S 9 [950, 1050]  │        414.6 │      184.2 │
+───────────────────────────────────────────────────────
+         MLP-SAC  │        525.3 │      319.3 │  ← MLP
+================================================================================
+
+SUMMARY
+  NE diagonal (ZI S6 vs ZI S6): 479.6  ±276.6
+  Best ZI deviator (S8):           528.9  ±257.0
+  MLP deviator:                      525.3  ±319.3
+  MLP vs NE ZI diagonal:             Δ=+45.7
+  MLP vs best ZI deviator:           Δ=-3.6
+
+  ✗ MLP does not outperform best ZI deviator (-3.6)
+  ✓ MLP outperforms ZI NE strategy when playing as deviator (Δ=+45.7)
+================================================================================
+
+Results saved → eval_mlp_ne_large_s6_v2_results.csv

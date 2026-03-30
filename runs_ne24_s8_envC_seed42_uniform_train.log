@@ -1,0 +1,69 @@
+
+Run directory: runs/tronformer_ne24_s8_envC_seed42_uniform
+Device: cuda
+/home/kshinde/ondemand/pymarketsim/train_tronformer.py:380: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+/home/kshinde/ondemand/pymarketsim/train_tronformer.py:386: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.rm_scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+
+Training TRONformer (CLS-DQN) for 2,000,000 steps
+  seq_len=40, n_step=5, batch=512
+  d_model=128, n_layers=2, shade_bins=100
+  exploration=eps-greedy(eps_end=0.05)
+  eps_decay_steps=1000000, train_freq=4
+  buffer_capacity=100000
+  env sim_time=2000, lam=0.012, lam_zi=0.012
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  step=  50,000  eval=+0.165±1.620  eps=0.953  loss=0.2594  7.4min
+  Saved model → runs/tronformer_ne24_s8_envC_seed42_uniform/best_model.pt
+  step= 100,000  eval=+0.344±1.151  eps=0.905  loss=0.2444  15.0min
+  Saved model → runs/tronformer_ne24_s8_envC_seed42_uniform/best_model.pt
+  step= 150,000  eval=+0.070±1.607  eps=0.858  loss=0.2141  22.5min
+  step= 200,000  eval=+0.401±1.569  eps=0.810  loss=0.1687  30.1min
+  Saved model → runs/tronformer_ne24_s8_envC_seed42_uniform/best_model.pt
+  step= 250,000  eval=+0.215±1.454  eps=0.762  loss=0.1756  37.7min
+  step= 300,000  eval=+0.077±1.588  eps=0.715  loss=0.1281  45.3min
+  step= 350,000  eval=+0.341±1.509  eps=0.667  loss=0.1261  52.9min
+  step= 400,000  eval=+0.322±1.726  eps=0.620  loss=0.1224  60.5min
+  step= 450,000  eval=+0.262±2.067  eps=0.573  loss=0.1174  68.1min
+  step= 500,000  eval=+0.236±1.197  eps=0.525  loss=0.0957  75.7min
+  step= 550,000  eval=+0.171±1.531  eps=0.478  loss=0.1007  83.4min
+  step= 600,000  eval=+0.364±1.511  eps=0.430  loss=0.0825  90.9min
+  step= 650,000  eval=+0.116±1.263  eps=0.383  loss=0.0775  98.7min
+  step= 700,000  eval=+0.234±1.158  eps=0.335  loss=0.0770  106.3min
+  step= 750,000  eval=+0.156±1.420  eps=0.288  loss=0.0799  113.9min
+  step= 800,000  eval=+0.214±1.394  eps=0.240  loss=0.0651  121.4min
+  step= 850,000  eval=+0.088±1.177  eps=0.193  loss=0.0685  129.1min
+  step= 900,000  eval=+0.165±1.736  eps=0.145  loss=0.0575  136.8min
+  step= 950,000  eval=+0.257±1.755  eps=0.098  loss=0.0676  144.4min
+  step=1,000,000  eval=+0.344±1.878  eps=0.050  loss=0.0718  152.1min
+  step=1,050,000  eval=+0.112±1.886  eps=0.050  loss=0.0744  159.8min
+  step=1,100,000  eval=+0.390±2.161  eps=0.050  loss=0.0725  167.5min
+  step=1,150,000  eval=+0.199±1.476  eps=0.050  loss=0.0767  175.2min
+  step=1,200,000  eval=+0.202±1.966  eps=0.050  loss=0.0751  182.9min
+  step=1,250,000  eval=+0.124±1.187  eps=0.050  loss=0.0708  190.7min
+  step=1,300,000  eval=+0.288±1.350  eps=0.050  loss=0.0615  198.6min
+  step=1,350,000  eval=+0.442±2.038  eps=0.050  loss=0.0681  206.4min
+  Saved model → runs/tronformer_ne24_s8_envC_seed42_uniform/best_model.pt
+  step=1,400,000  eval=+0.359±1.652  eps=0.050  loss=0.0592  214.2min
+  step=1,450,000  eval=-0.189±2.012  eps=0.050  loss=0.0670  221.9min
+  step=1,500,000  eval=+0.313±1.712  eps=0.050  loss=0.0737  229.6min
+  step=1,550,000  eval=+0.139±1.471  eps=0.050  loss=0.0844  237.3min
+  step=1,600,000  eval=+0.180±1.655  eps=0.050  loss=0.0618  245.0min
+  step=1,650,000  eval=+0.117±0.758  eps=0.050  loss=0.0457  252.7min
+  step=1,700,000  eval=+0.307±1.826  eps=0.050  loss=0.0504  260.4min
+  step=1,750,000  eval=+0.286±2.280  eps=0.050  loss=0.0598  268.2min
+  step=1,800,000  eval=+0.064±2.051  eps=0.050  loss=0.0638  275.8min
+  step=1,850,000  eval=+0.084±1.496  eps=0.050  loss=0.0761  283.6min
+  step=1,900,000  eval=+0.146±1.400  eps=0.050  loss=0.0701  291.3min
+  step=1,950,000  eval=+0.133±1.382  eps=0.050  loss=0.0715  299.1min
+  step=2,000,000  eval=+0.021±1.994  eps=0.050  loss=0.0687  306.9min
+  Saved model → runs/tronformer_ne24_s8_envC_seed42_uniform/final_model.pt
+
+Training complete. Best eval: +0.4421
+All outputs in: runs/tronformer_ne24_s8_envC_seed42_uniform/
+  Saved: runs/tronformer_ne24_s8_envC_seed42_uniform/learning_curve.png

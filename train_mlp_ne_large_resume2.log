@@ -1,0 +1,97 @@
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+NE background strategy: S6  {'shade': [380, 420], 'eta': 0.5}
+Background agents     : 24
+Base seed             : 42
+Run directory: runs/sac_zi_ne_large_s6_v2
+
+[1/4] Evaluating ZI baseline strategies in NE environment...
+  ZI-NE     (shade=[380, 420], η=0.5)  mean=+1.308  std=10.042
+  ZI-tight  (shade=[90,110],   η=0.5)  mean=-1.887  std=9.392
+  ZI-medium (shade=[250,350],  η=0.5)  mean=-4.915  std=11.949
+  ZI-wide   (shade=[380,420],  η=1.0)  mean=+2.102  std=7.982
+
+[2/4] Setting up environments...
+  Using 4 parallel training environments (DummyVecEnv)
+
+[3/4] Training SAC agent...
+       ne_strategy   : S6  {'shade': [380, 420], 'eta': 0.5}
+       timesteps     : 240,000
+       n_envs        : 4
+       eval_freq     : 12,000 steps  (~20 evals)
+       checkpoint    : 48,000 steps  (~5 checkpoints)
+
+  Resuming from runs/sac_zi_ne_large_s6_v2/checkpoints/sac_step_160000_steps
+Eval num_timesteps=12000, episode_reward=4.45 +/- 10.06
+Episode length: 10.20 +/- 3.67
+New best mean reward!
+Eval num_timesteps=24000, episode_reward=5.55 +/- 13.56
+Episode length: 10.30 +/- 2.19
+New best mean reward!
+Eval num_timesteps=36000, episode_reward=0.92 +/- 8.49
+Episode length: 10.95 +/- 3.26
+Eval num_timesteps=48000, episode_reward=-6.97 +/- 22.82
+Episode length: 10.35 +/- 2.82
+Eval num_timesteps=60000, episode_reward=0.95 +/- 11.37
+Episode length: 9.60 +/- 3.50
+Eval num_timesteps=72000, episode_reward=1.78 +/- 14.99
+Episode length: 9.15 +/- 3.35
+Eval num_timesteps=84000, episode_reward=1.38 +/- 9.79
+Episode length: 10.45 +/- 3.11
+Eval num_timesteps=96000, episode_reward=3.05 +/- 9.26
+Episode length: 10.00 +/- 3.66
+Eval num_timesteps=108000, episode_reward=-0.91 +/- 12.36
+Episode length: 10.55 +/- 3.02
+Eval num_timesteps=120000, episode_reward=0.27 +/- 14.14
+Episode length: 11.65 +/- 4.08
+Eval num_timesteps=132000, episode_reward=-1.84 +/- 8.19
+Episode length: 10.80 +/- 3.26
+Eval num_timesteps=144000, episode_reward=-2.85 +/- 13.63
+Episode length: 9.30 +/- 3.65
+Eval num_timesteps=156000, episode_reward=-4.01 +/- 11.84
+Episode length: 11.30 +/- 3.74
+Eval num_timesteps=168000, episode_reward=1.02 +/- 14.76
+Episode length: 10.35 +/- 3.60
+Eval num_timesteps=180000, episode_reward=2.76 +/- 12.06
+Episode length: 10.80 +/- 3.22
+Eval num_timesteps=192000, episode_reward=4.03 +/- 8.76
+Episode length: 9.35 +/- 2.85
+Eval num_timesteps=204000, episode_reward=-3.29 +/- 16.48
+Episode length: 10.70 +/- 2.90
+Eval num_timesteps=216000, episode_reward=-2.73 +/- 5.85
+Episode length: 10.30 +/- 3.16
+Eval num_timesteps=228000, episode_reward=-2.65 +/- 10.15
+Episode length: 8.40 +/- 2.40
+Eval num_timesteps=240000, episode_reward=-1.60 +/- 8.56
+Episode length: 11.40 +/- 2.99
+
+  Training finished in 60.2 min
+  Saved final model → runs/sac_zi_ne_large_s6_v2/final_model.zip
+
+[4/4] Evaluating trained agent...
+  Trained agent (best)  mean=+1.0183  std=14.0187
+
+  ZI Baseline comparison:
+    vs ZI-NE     (shade=[380, 420], η=0.5)  Δ=-0.2896
+    vs ZI-tight  (shade=[90,110],   η=0.5)  Δ=+2.9053
+    vs ZI-medium (shade=[250,350],  η=0.5)  Δ=+5.9329
+    vs ZI-wide   (shade=[380,420],  η=1.0)  Δ=-1.0840
+
+  Generating learning curve plot...
+  Saved: runs/sac_zi_ne_large_s6_v2/learning_curve.png
+
+All outputs in: runs/sac_zi_ne_large_s6_v2/
+
+Next step — evaluate MLP vs 24 NE background agents:
+  python eval_mlp_ne_large.py --ne-strategy 6 --model runs/sac_zi_ne_large_s6_v2/best_model --num-runs 2000 --output eval_mlp_ne_large_s6_results.csv

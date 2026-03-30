@@ -1,0 +1,340 @@
+"""
+eval_paper.py — Evaluate a trained TRON agent vs ZI background (paper replication).
+
+Replicates Table 3 (Env B) from Mascioli et al. ICAIF 2024:
+  - NE background: S8 (shade=[460,540], eta=0.5), n_bg=24
+  - Deviator: TRONAgent (trained via R2D2)
+  - Baseline: ZI deviator playing S8 (NE strategy) vs same background
+
+Usage
+-----
+    # Smoke test (10 runs, single process, GPU)
+    python eval_paper.py --model runs/tron_paper_envB/best_model.pt --num-runs 10 --no-mp
+
+    # Full evaluation (500 runs)
+    python -u eval_paper.py \\
+        --model runs/tron_paper_envB/best_model.pt \\
+        --num-runs 500 \\
+        --no-mp \\
+        --output results/equilibrium/paper_envB_eval.csv
+"""
+
+import argparse
+import multiprocessing as mp
+import os
+import random
+
+import numpy as np
+import torch
+
+from marketsim.agent.tron_agent import TRONAgent, TRONPolicy
+from marketsim.agent.zero_intelligence_agent import ZIAgent
+from marketsim.simulator.simulator import Simulator
+
+
+# ---------------------------------------------------------------------------
+# Strategies and environment (inlined — avoids import from hyphen-path dir)
+# ---------------------------------------------------------------------------
+
+STRATEGIES = {
+    0: {'shade': [0, 450],    'eta': 0.5},
+    1: {'shade': [0, 600],    'eta': 0.5},
+    2: {'shade': [90, 110],   'eta': 0.5},
+    3: {'shade': [140, 160],  'eta': 0.5},
+    4: {'shade': [190, 210],  'eta': 0.5},
+    5: {'shade': [280, 320],  'eta': 0.5},
+    6: {'shade': [380, 420],  'eta': 0.5},
+    7: {'shade': [380, 420],  'eta': 1.0},
+    8: {'shade': [460, 540],  'eta': 0.5},
+    9: {'shade': [950, 1050], 'eta': 0.5},
+}
+
+ENV = {
+    'lam':       0.005,
+    'mean':      1e5,
+    'r':         0.01,
+    'shock_var': 1e6,
+    'pv_var':    5e6,
+    'q_max':     10,
+    'sim_time':  2000,
+    'n_bg':      24,
+    'bg_idx':    8,      # NE background strategy index
+}
+
+NORMALIZERS = {"fundamental": 1e5, "invt": 10, "pv": 5e5}
+BASE_SEED = 42
+
+
+# ---------------------------------------------------------------------------
+# Single-run workers
+# ---------------------------------------------------------------------------
+
+def _run_one_tron(args):
+    """Run one simulation with a TRON deviator vs S8 background.
+
+    Args:
+        args: (weights_path, bg_idx, run_idx, base_seed)
+
+    Returns:
+        raw profit (float)
+    """
+    weights_path, bg_idx, run_idx, base_seed = args
+    seed = base_seed + run_idx
+    random.seed(seed)
+    np.random.seed(seed)
+
+    bg_strat = STRATEGIES[bg_idx]
+
+    sim = Simulator(
+        num_background_agents=0,
+        sim_time=ENV["sim_time"],
+        num_assets=1,
+        lam=ENV["lam"],
+        mean=ENV["mean"],
+        r=ENV["r"],
+        shock_var=ENV["shock_var"],
+        q_max=ENV["q_max"],
+        pv_var=ENV["pv_var"],
+    )
+    sim.agents = {}
+
+    # TRON deviator at agent_id=0
+    tron = TRONAgent(
+        agent_id=0,
+        market=sim.markets[0],
+        q_max=ENV["q_max"],
+        pv_var=ENV["pv_var"],
+        normalizers=NORMALIZERS,
+        weights_path=weights_path,
+    )
+    if torch.cuda.is_available():
+        tron.policy = tron.policy.cuda()
+    sim.agents[0] = tron
+
+    # Background ZI agents
+    for i in range(1, ENV["n_bg"] + 1):
+        sim.agents[i] = ZIAgent(
+            agent_id=i,
+            market=sim.markets[0],
+            q_max=ENV["q_max"],
+            shade=bg_strat["shade"],
+            eta=bg_strat["eta"],
+            pv_var=ENV["pv_var"],
+        )
+
+    sim.run()
+
+    fv = sim.markets[0].get_final_fundamental()
+    dev = sim.agents[0]
+    return dev.get_pos_value() + dev.position * fv + dev.cash
+
+
+def _run_one_zi(args):
+    """Run one simulation with a ZI deviator (NE strategy) vs S8 background.
+
+    Args:
+        args: (bg_idx, dev_idx, run_idx, base_seed)
+
+    Returns:
+        raw profit (float)
+    """
+    bg_idx, dev_idx, run_idx, base_seed = args
+    seed = base_seed + run_idx
+    random.seed(seed)
+    np.random.seed(seed)
+
+    bg_strat  = STRATEGIES[bg_idx]
+    dev_strat = STRATEGIES[dev_idx]
+
+    sim = Simulator(
+        num_background_agents=0,
+        sim_time=ENV["sim_time"],
+        num_assets=1,
+        lam=ENV["lam"],
+        mean=ENV["mean"],
+        r=ENV["r"],
+        shock_var=ENV["shock_var"],
+        q_max=ENV["q_max"],
+        pv_var=ENV["pv_var"],
+    )
+    sim.agents = {}
+
+    sim.agents[0] = ZIAgent(
+        agent_id=0,
+        market=sim.markets[0],
+        q_max=ENV["q_max"],
+        shade=dev_strat["shade"],
+        eta=dev_strat["eta"],
+        pv_var=ENV["pv_var"],
+    )
+
+    for i in range(1, ENV["n_bg"] + 1):
+        sim.agents[i] = ZIAgent(
+            agent_id=i,
+            market=sim.markets[0],
+            q_max=ENV["q_max"],
+            shade=bg_strat["shade"],
+            eta=bg_strat["eta"],
+            pv_var=ENV["pv_var"],
+        )
+
+    sim.run()
+
+    fv  = sim.markets[0].get_final_fundamental()
+    dev = sim.agents[0]
+    return dev.get_pos_value() + dev.position * fv + dev.cash
+
+
+# ---------------------------------------------------------------------------
+# Evaluation runners
+# ---------------------------------------------------------------------------
+
+def run_sequential(weights_path: str, num_runs: int, bg_idx: int, base_seed: int):
+    """Run all simulations sequentially (single process, GPU-safe)."""
+    print(f"Running {num_runs} TRON simulations (sequential)...")
+    tron_profits = []
+    for i in range(num_runs):
+        p = _run_one_tron((weights_path, bg_idx, i, base_seed))
+        tron_profits.append(p)
+        if (i + 1) % max(1, num_runs // 10) == 0:
+            print(f"  TRON: {i+1}/{num_runs}  running mean={np.mean(tron_profits):.1f}")
+
+    print(f"\nRunning {num_runs} ZI (S{bg_idx}) simulations (sequential)...")
+    zi_profits = []
+    for i in range(num_runs):
+        p = _run_one_zi((bg_idx, bg_idx, i, base_seed))
+        zi_profits.append(p)
+        if (i + 1) % max(1, num_runs // 10) == 0:
+            print(f"  ZI:   {i+1}/{num_runs}  running mean={np.mean(zi_profits):.1f}")
+
+    return np.array(tron_profits), np.array(zi_profits)
+
+
+def run_parallel(weights_path: str, num_runs: int, bg_idx: int, base_seed: int,
+                 n_processes: int = None):
+    """Run simulations using mp.Pool (CPU only — no CUDA fork)."""
+    if n_processes is None:
+        n_processes = mp.cpu_count()
+
+    print(f"Running {num_runs} TRON simulations ({n_processes} processes)...")
+    tron_tasks = [(weights_path, bg_idx, i, base_seed) for i in range(num_runs)]
+    with mp.Pool(n_processes) as pool:
+        tron_profits = list(pool.imap_unordered(_run_one_tron, tron_tasks))
+
+    print(f"Running {num_runs} ZI (S{bg_idx}) simulations ({n_processes} processes)...")
+    zi_tasks = [(bg_idx, bg_idx, i, base_seed) for i in range(num_runs)]
+    with mp.Pool(n_processes) as pool:
+        zi_profits = list(pool.imap_unordered(_run_one_zi, zi_tasks))
+
+    return np.array(tron_profits), np.array(zi_profits)
+
+
+# ---------------------------------------------------------------------------
+# Display and save
+# ---------------------------------------------------------------------------
+
+def display_results(tron_profits: np.ndarray, zi_profits: np.ndarray,
+                    bg_idx: int, num_runs: int):
+    tron_mean = float(np.mean(tron_profits))
+    tron_se   = float(np.std(tron_profits, ddof=1) / np.sqrt(num_runs))
+    zi_mean   = float(np.mean(zi_profits))
+    zi_se     = float(np.std(zi_profits, ddof=1) / np.sqrt(num_runs))
+
+    bg_strat = STRATEGIES[bg_idx]
+    advantage_pct = 100.0 * (tron_mean - zi_mean) / abs(zi_mean) if zi_mean != 0 else float("nan")
+
+    print("\n" + "=" * 60)
+    print(f"RESULTS  —  Environment B  (lam={ENV['lam']}, shock_var={ENV['shock_var']:.0e}, pv_var={ENV['pv_var']:.0e})")
+    print(f"NE Background: S{bg_idx} (shade={bg_strat['shade']}, eta={bg_strat['eta']}), n_bg={ENV['n_bg']}")
+    print(f"Runs: {num_runs}")
+    print("=" * 60)
+    print(f"  ZI  avg profit:  {zi_mean:8.1f}  ±{zi_se:.1f}")
+    print(f"  TRON profit:     {tron_mean:8.1f}  ±{tron_se:.1f}")
+    print(f"  TRON advantage: {advantage_pct:+.1f}%")
+    print("-" * 60)
+    print(f"  Paper (Table 3, Env B):  ZI=152, TRON=170  (+12%)")
+    print("=" * 60)
+
+    return tron_mean, tron_se, zi_mean, zi_se
+
+
+def save_results(output_path: str, tron_profits: np.ndarray, zi_profits: np.ndarray,
+                 bg_idx: int):
+    import csv
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    tron_mean = float(np.mean(tron_profits))
+    tron_std  = float(np.std(tron_profits, ddof=1))
+    zi_mean   = float(np.mean(zi_profits))
+    zi_std    = float(np.std(zi_profits, ddof=1))
+
+    rows = [
+        {"deviator": f"ZI-S{bg_idx}", "mean_profit": zi_mean,   "std": zi_std,   "n": len(zi_profits)},
+        {"deviator": "TRON",          "mean_profit": tron_mean, "std": tron_std, "n": len(tron_profits)},
+    ]
+    with open(output_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["deviator", "mean_profit", "std", "n"])
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\nResults saved → {output_path}")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Evaluate TRON agent vs ZI (paper replication)")
+    p.add_argument("--model", type=str, required=True,
+                   help="Path to trained TRONPolicy .pt state_dict")
+    p.add_argument("--num-runs", type=int, default=500,
+                   help="Number of simulation runs (default: 500)")
+    p.add_argument("--bg-strategy", type=int, default=ENV["bg_idx"],
+                   help=f"NE background strategy index (default: {ENV['bg_idx']})")
+    p.add_argument("--n-bg", type=int, default=ENV["n_bg"],
+                   help=f"Number of background agents (default: {ENV['n_bg']})")
+    p.add_argument("--seed", type=int, default=BASE_SEED,
+                   help=f"Base random seed (default: {BASE_SEED})")
+    p.add_argument("--no-mp", action="store_true",
+                   help="Disable multiprocessing; run single-process (recommended with GPU)")
+    p.add_argument("--processes", type=int, default=None,
+                   help="Worker processes for mp mode (default: cpu_count)")
+    p.add_argument("--output", type=str, default=None,
+                   help="Output CSV path (default: no file saved)")
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    # Apply CLI overrides to ENV
+    ENV["n_bg"]    = args.n_bg
+    ENV["bg_idx"]  = args.bg_strategy
+
+    if not os.path.exists(args.model):
+        raise FileNotFoundError(f"Model not found: {args.model}")
+
+    print(f"\nEvaluating TRON model: {args.model}")
+    print(f"  Background: S{args.bg_strategy} ({STRATEGIES[args.bg_strategy]}), n_bg={args.n_bg}")
+    print(f"  Runs: {args.num_runs}")
+    print(f"  Mode: {'sequential (GPU-safe)' if args.no_mp else 'multiprocessing'}")
+    print(f"  CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+
+    if args.no_mp:
+        tron_profits, zi_profits = run_sequential(
+            args.model, args.num_runs, args.bg_strategy, args.seed
+        )
+    else:
+        tron_profits, zi_profits = run_parallel(
+            args.model, args.num_runs, args.bg_strategy, args.seed, args.processes
+        )
+
+    display_results(tron_profits, zi_profits, args.bg_strategy, args.num_runs)
+
+    if args.output:
+        save_results(args.output, tron_profits, zi_profits, args.bg_strategy)
+
+
+if __name__ == "__main__":
+    main()

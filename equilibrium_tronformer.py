@@ -139,7 +139,7 @@ def _run_tronformer_cell(args):
         env_kwargs["shade_bins"] = shade_bins
     env = TRONEnv(**env_kwargs)
 
-    dev_profits = []
+    advantages = []
     for _ in range(num_runs):
         obs, _ = env.reset()
         obs_buffer: collections.deque = collections.deque(maxlen=seq_len)
@@ -169,9 +169,19 @@ def _run_tronformer_cell(args):
             ep_reward += r
             done = terminated or truncated
 
-        dev_profits.append(ep_reward * reward_norm)
+        dev_profit = ep_reward * reward_norm
 
-    return bg_idx, float(np.mean(dev_profits))
+        # Compare against mean ZI background agent profit in the same simulation.
+        # get_final_fundamental() is already cached after end_sim(), safe to call.
+        final_fund = env.market.get_final_fundamental()
+        bg_profits = [
+            agent.position * final_fund + agent.cash + agent.get_pos_value()
+            for agent in env.agents.values()
+        ]
+        mean_bg_profit = float(np.mean(bg_profits))
+        advantages.append(dev_profit - mean_bg_profit)
+
+    return bg_idx, float(np.mean(advantages))
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +259,7 @@ def display_extended_results(
     print("\n" + "=" * 90)
     print("DEVIATOR PROFIT TABLE  (extended with TRONformer deviator)")
     print("Rows = background strategy  |  Cols = deviator strategy")
-    print(f"Value = mean deviator profit  |  Last col ({model_label}) = TRONformer transformer DQN")
+    print(f"Value = mean deviator profit  |  Last col ({model_label}) = TRONformer advantage over mean same-sim ZI bg profit")
     print("=" * 90)
     print(df.round(1).to_string())
 

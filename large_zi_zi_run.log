@@ -1,0 +1,73 @@
+
+LARGE-SCALE ZI×ZI EQUILIBRIUM EXPERIMENT
+  Strategy matrix : 10×10 cells
+  Runs per cell   : 2,000
+  Total sims      : 200,000
+  Processes       : 36
+  base_seed       : 42
+
+cells completed:   0%|          | 0/100 [00:00<?, ?it/s]cells completed:   1%|          | 1/100 [03:19<5:28:48, 199.28s/it]cells completed:   2%|▏         | 2/100 [03:20<2:14:44, 82.50s/it] cells completed:   4%|▍         | 4/100 [03:23<51:04, 31.92s/it]  cells completed:   5%|▌         | 5/100 [03:24<35:28, 22.40s/it]cells completed:   6%|▌         | 6/100 [03:25<24:45, 15.81s/it]cells completed:   7%|▋         | 7/100 [03:26<17:20, 11.18s/it]cells completed:   8%|▊         | 8/100 [03:26<12:09,  7.93s/it]cells completed:   9%|▉         | 9/100 [03:27<08:53,  5.86s/it]cells completed:  10%|█         | 10/100 [03:29<07:01,  4.68s/it]cells completed:  12%|█▏        | 12/100 [03:29<03:44,  2.55s/it]cells completed:  14%|█▍        | 14/100 [03:31<02:41,  1.87s/it]cells completed:  15%|█▌        | 15/100 [03:34<03:01,  2.13s/it]cells completed:  16%|█▌        | 16/100 [03:35<02:27,  1.76s/it]cells completed:  17%|█▋        | 17/100 [03:35<02:00,  1.45s/it]cells completed:  18%|█▊        | 18/100 [03:36<01:45,  1.28s/it]cells completed:  19%|█▉        | 19/100 [03:36<01:20,  1.01it/s]cells completed:  20%|██        | 20/100 [03:45<04:06,  3.08s/it]cells completed:  21%|██        | 21/100 [03:45<02:59,  2.27s/it]cells completed:  22%|██▏       | 22/100 [03:53<05:06,  3.93s/it]cells completed:  23%|██▎       | 23/100 [04:53<26:18, 20.50s/it]cells completed:  24%|██▍       | 24/100 [04:59<20:24, 16.11s/it]cells completed:  25%|██▌       | 25/100 [05:59<36:35, 29.27s/it]cells completed:  26%|██▌       | 26/100 [06:46<42:19, 34.32s/it]cells completed:  27%|██▋       | 27/100 [06:49<30:39, 25.20s/it]cells completed:  28%|██▊       | 28/100 [06:53<22:41, 18.90s/it]cells completed:  29%|██▉       | 29/100 [06:55<16:03, 13.57s/it]cells completed:  31%|███       | 31/100 [06:55<08:36,  7.49s/it]cells completed:  32%|███▏      | 32/100 [06:56<06:30,  5.75s/it]cells completed:  33%|███▎      | 33/100 [06:56<04:53,  4.37s/it]cells completed:  34%|███▍      | 34/100 [06:57<03:40,  3.33s/it]cells completed:  35%|███▌      | 35/100 [06:57<02:43,  2.52s/it]cells completed:  36%|███▌      | 36/100 [06:59<02:24,  2.25s/it]cells completed:  37%|███▋      | 37/100 [07:02<02:32,  2.42s/it]cells completed:  38%|███▊      | 38/100 [07:02<01:50,  1.77s/it]cells completed:  39%|███▉      | 39/100 [07:02<01:18,  1.29s/it]cells completed:  40%|████      | 40/100 [07:04<01:32,  1.54s/it]cells completed:  41%|████      | 41/100 [07:05<01:24,  1.43s/it]cells completed:  42%|████▏     | 42/100 [07:06<01:06,  1.14s/it]cells completed:  43%|████▎     | 43/100 [07:09<01:36,  1.70s/it]cells completed:  44%|████▍     | 44/100 [07:09<01:12,  1.30s/it]cells completed:  45%|████▌     | 45/100 [07:11<01:16,  1.39s/it]cells completed:  46%|████▌     | 46/100 [07:18<02:53,  3.22s/it]cells completed:  47%|████▋     | 47/100 [07:20<02:23,  2.71s/it]cells completed:  48%|████▊     | 48/100 [07:23<02:30,  2.89s/it]cells completed:  49%|████▉     | 49/100 [07:46<07:38,  8.99s/it]cells completed:  50%|█████     | 50/100 [08:05<09:59, 11.98s/it]cells completed:  51%|█████     | 51/100 [08:20<10:25, 12.76s/it]cells completed:  52%|█████▏    | 52/100 [08:28<09:03, 11.32s/it]cells completed:  53%|█████▎    | 53/100 [08:40<09:09, 11.70s/it]cells completed:  54%|█████▍    | 54/100 [08:59<10:33, 13.77s/it]cells completed:  55%|█████▌    | 55/100 [09:02<07:47, 10.40s/it]cells completed:  56%|█████▌    | 56/100 [09:26<10:49, 14.76s/it]cells completed:  57%|█████▋    | 57/100 [09:27<07:33, 10.54s/it]cells completed:  58%|█████▊    | 58/100 [09:45<08:51, 12.66s/it]cells completed:  59%|█████▉    | 59/100 [10:13<11:55, 17.45s/it]cells completed:  60%|██████    | 60/100 [10:14<08:11, 12.28s/it]cells completed:  61%|██████    | 61/100 [10:14<05:38,  8.68s/it]cells completed:  62%|██████▏   | 62/100 [10:14<03:54,  6.17s/it]cells completed:  63%|██████▎   | 63/100 [10:18<03:16,  5.32s/it]cells completed:  64%|██████▍   | 64/100 [10:19<02:28,  4.13s/it]cells completed:  65%|██████▌   | 65/100 [10:19<01:42,  2.92s/it]cells completed:  67%|██████▋   | 67/100 [10:19<00:55,  1.68s/it]cells completed:  68%|██████▊   | 68/100 [10:21<00:49,  1.55s/it]cells completed:  69%|██████▉   | 69/100 [10:21<00:37,  1.22s/it]cells completed:  70%|███████   | 70/100 [10:23<00:43,  1.45s/it]cells completed:  71%|███████   | 71/100 [10:25<00:50,  1.74s/it]cells completed:  72%|███████▏  | 72/100 [10:26<00:37,  1.35s/it]cells completed:  73%|███████▎  | 73/100 [10:27<00:33,  1.25s/it]cells completed:  74%|███████▍  | 74/100 [10:30<00:50,  1.95s/it]cells completed:  75%|███████▌  | 75/100 [10:31<00:36,  1.45s/it]cells completed:  76%|███████▌  | 76/100 [10:32<00:33,  1.39s/it]cells completed:  77%|███████▋  | 77/100 [10:33<00:30,  1.33s/it]cells completed:  78%|███████▊  | 78/100 [10:35<00:32,  1.48s/it]cells completed:  79%|███████▉  | 79/100 [10:44<01:19,  3.79s/it]cells completed:  80%|████████  | 80/100 [10:45<00:59,  2.96s/it]cells completed:  81%|████████  | 81/100 [10:56<01:39,  5.23s/it]cells completed:  82%|████████▏ | 82/100 [11:23<03:32, 11.82s/it]cells completed:  83%|████████▎ | 83/100 [11:24<02:27,  8.71s/it]cells completed:  84%|████████▍ | 84/100 [11:47<03:25, 12.86s/it]cells completed:  85%|████████▌ | 85/100 [12:01<03:17, 13.20s/it]cells completed:  86%|████████▌ | 86/100 [12:08<02:40, 11.48s/it]cells completed:  87%|████████▋ | 87/100 [12:11<01:55,  8.90s/it]cells completed:  88%|████████▊ | 88/100 [12:18<01:37,  8.15s/it]cells completed:  89%|████████▉ | 89/100 [12:20<01:10,  6.41s/it]cells completed:  90%|█████████ | 90/100 [12:36<01:33,  9.39s/it]cells completed:  91%|█████████ | 91/100 [12:38<01:02,  6.91s/it]cells completed:  92%|█████████▏| 92/100 [12:39<00:41,  5.22s/it]cells completed:  93%|█████████▎| 93/100 [12:39<00:26,  3.74s/it]cells completed:  94%|█████████▍| 94/100 [12:39<00:15,  2.66s/it]cells completed:  95%|█████████▌| 95/100 [12:40<00:09,  1.98s/it]cells completed:  96%|█████████▌| 96/100 [12:42<00:08,  2.03s/it]cells completed:  97%|█████████▋| 97/100 [12:44<00:05,  1.95s/it]cells completed:  98%|█████████▊| 98/100 [12:44<00:02,  1.45s/it]cells completed:  99%|█████████▉| 99/100 [12:44<00:01,  1.10s/it]cells completed: 100%|██████████| 100/100 [13:41<00:00, 17.90s/it]cells completed: 100%|██████████| 100/100 [13:41<00:00,  8.22s/it]
+
+================================================================================
+DEVIATOR PROFIT TABLE  (large-scale run)
+Rows = background strategy  |  Cols = deviator strategy
+Value = mean deviator profit
+================================================================================
+Deviator ↓         S0      S1      S2      S3      S4      S5      S6      S7      S8      S9
+BG Strategy →                                                                                
+S0              416.8   340.6   245.3   344.4   358.1   400.2   373.5   303.8   328.6   294.6
+S1             1328.3  1358.3  1293.0  1356.7  1334.9  1305.7  1411.7  1271.2  1446.0  1197.5
+S2              620.2   554.2   570.8   724.8   660.9   727.8   606.4   310.7   598.2   552.5
+S3              475.7   486.3   452.6   518.6   540.4   463.4   557.9   453.7   572.8   630.4
+S4             -252.9  -212.6  -331.5  -263.3  -245.4   -44.3   134.7   -14.4   184.9   292.5
+S5              371.1   464.4   298.0   391.9   408.7   513.7   470.3   374.8   548.5   545.4
+S6             -160.5  -116.8  -322.9  -262.7  -181.2    11.7    60.8   -58.9    31.2   212.2
+S7              845.6   860.8   867.4   799.6   822.3   894.6   871.9   568.2   859.3   849.8
+S8              654.6   741.2   546.2   646.3   622.8   618.4   560.4   458.4   613.6   692.6
+S9             -188.0  -157.3  -156.7   -65.1   -26.3     1.6    39.9   -29.1    76.0   205.5
+
+================================================================================
+BEST DEVIATOR STRATEGY FOR EACH BACKGROUND STRATEGY
+================================================================================
+ BG Strategy │ Best Deviation │    Advantage │        ±SE │ NE?
+─────────────────────────────────────────────────────────────────
+          S0 │             S0 │        416.8 │      309.6  ✓ NE
+          S1 │             S8 │       1446.0 │      259.6
+          S2 │             S5 │        727.8 │      279.6
+          S3 │             S9 │        630.4 │      218.0
+          S4 │             S9 │        292.5 │      204.9
+          S5 │             S8 │        548.5 │      259.8
+          S6 │             S9 │        212.2 │      179.5
+          S7 │             S5 │        894.6 │      299.7
+          S8 │             S1 │        741.2 │      295.3
+          S9 │             S9 │        205.5 │      158.5  ✓ NE
+
+────────────────────────────────────────────────────────────────────────────────
+NEAR-NE CHECK: strategies where diagonal profit is within 1 SE of best
+    S0  diag=     416.8  best=     416.8  gap=     0.0  1SE=   309.6  ≈NE
+    S1  diag=    1358.3  best=    1446.0  gap=    87.7  1SE=   259.6  ≈NE
+    S2  diag=     570.8  best=     727.8  gap=   157.0  1SE=   279.6  ≈NE
+    S3  diag=     518.6  best=     630.4  gap=   111.7  1SE=   218.0  ≈NE
+    S4  diag=    -245.4  best=     292.5  gap=   537.9  1SE=   204.9  
+    S5  diag=     513.7  best=     548.5  gap=    34.8  1SE=   259.8  ≈NE
+    S6  diag=      60.8  best=     212.2  gap=   151.4  1SE=   179.5  ≈NE
+    S7  diag=     568.2  best=     894.6  gap=   326.4  1SE=   299.7  
+    S8  diag=     613.6  best=     741.2  gap=   127.5  1SE=   295.3  ≈NE
+    S9  diag=     205.5  best=     205.5  gap=     0.0  1SE=   158.5  ≈NE
+
+================================================================================
+NASH EQUILIBRIUM CANDIDATES
+================================================================================
+  S0  shade=[0, 450]  eta=0.5
+       Best deviation when facing S0 = S0  (advantage ≈ 416.8)
+  S9  shade=[950, 1050]  eta=0.5
+       Best deviation when facing S9 = S9  (advantage ≈ 205.5)
+================================================================================
+
+Advantage matrix  → equilibrium_results_large.csv
+Standard errors   → equilibrium_se_large.csv
+
+Found NE candidates: ['S0', 'S9']
+Run Phase 2 with:
+  python train_mlp_ne.py --ne-strategy 0
+  python train_mlp_ne.py --ne-strategy 9

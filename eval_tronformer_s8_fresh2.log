@@ -1,0 +1,40 @@
+Loading model: runs/tronformer_ne24_envC_rope_seed42_skewed/best_model.pt
+Env C: lam=0.012, lam_zi=0.012, shock_var=20000.0, pv_var=20000000.0, n_bg=24, sim_time=2000
+Background: 24 × S8 (shade=[460,540], η=0.5)
+Running 500 fresh episodes (seed=42) ...
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  episode   50/500  TF mean=  1899.4  BG mean=  1274.6  TF std= 2228.0  se= 315.1
+  episode  100/500  TF mean=  1236.7  BG mean=  1284.6  TF std= 2117.9  se= 211.8
+  episode  150/500  TF mean=  1069.4  BG mean=  1297.4  TF std= 2053.7  se= 167.7
+  episode  200/500  TF mean=  1108.1  BG mean=  1296.0  TF std= 2163.7  se= 153.0
+  episode  250/500  TF mean=  1159.1  BG mean=  1284.9  TF std= 2136.0  se= 135.1
+  episode  300/500  TF mean=  1082.8  BG mean=  1276.9  TF std= 2138.1  se= 123.4
+  episode  350/500  TF mean=  1128.2  BG mean=  1267.1  TF std= 2170.8  se= 116.0
+  episode  400/500  TF mean=  1104.3  BG mean=  1267.7  TF std= 2113.8  se= 105.7
+  episode  450/500  TF mean=  1068.4  BG mean=  1275.8  TF std= 2115.0  se=  99.7
+  episode  500/500  TF mean=  1043.1  BG mean=  1271.1  TF std= 2084.0  se=  93.2
+
+============================================================
+RESULTS  (500 episodes, TRONformer vs 24×S8, Env C)
+============================================================
+  TRONformer profit:
+    Mean          :   1043.1
+    Std dev       :   2084.0
+    Std error     :    93.20
+    95% CI        : [860.4, 1225.7]
+    Median        :    543.4
+    Min / Max     : -7548.2 / 12488.3
+
+  ZI S8 background agent profit (mean per episode, avg across 24):
+    Mean          :   1271.1
+    Std dev       :    373.7
+    Std error     :    16.71
+    95% CI        : [1238.3, 1303.8]
+    Median        :   1245.3
+
+  TRONformer advantage over avg S8 agent: -228.0
+============================================================

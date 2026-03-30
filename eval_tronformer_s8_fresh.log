@@ -1,0 +1,31 @@
+Loading model: runs/tronformer_ne24_envC_rope_seed42_skewed/best_model.pt
+Env C: lam=0.012, lam_zi=0.012, shock_var=20000.0, pv_var=20000000.0, n_bg=24, sim_time=2000
+Background: 24 × S8 (shade=[460,540], η=0.5)
+Running 500 fresh episodes (seed=42) ...
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  episode   50/500  running mean=  1899.4  std= 2228.0  se= 315.1
+  episode  100/500  running mean=  1237.6  std= 2118.1  se= 211.8
+  episode  150/500  running mean=  1070.1  std= 2054.0  se= 167.7
+  episode  200/500  running mean=  1108.1  std= 2163.8  se= 153.0
+  episode  250/500  running mean=  1153.7  std= 2135.6  se= 135.1
+  episode  300/500  running mean=  1078.3  std= 2137.7  se= 123.4
+  episode  350/500  running mean=  1124.4  std= 2170.5  se= 116.0
+  episode  400/500  running mean=  1101.7  std= 2114.0  se= 105.7
+  episode  450/500  running mean=  1064.9  std= 2115.5  se=  99.7
+  episode  500/500  running mean=  1040.7  std= 2084.1  se=  93.2
+
+============================================================
+RESULTS  (500 episodes, TRONformer vs 24×S8, Env C)
+============================================================
+  Mean profit   :   1040.7
+  Std dev        :   2084.1
+  Std error      :    93.20
+  95% CI         : [858.0, 1223.4]
+  Median         :    541.0
+  IQR            : [0.0, 1665.2]
+  Min / Max      : -7548.2 / 12488.3
+============================================================
