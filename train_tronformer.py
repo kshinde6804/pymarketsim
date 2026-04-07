@@ -419,21 +419,21 @@ class R2D2FormerTrainer:
         obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, seq_len, D)
 
         with torch.no_grad():
-            Q_shade, Q_eta = self.online(obs_t)  # (1, seq_len, n_shade), (1, seq_len, n_eta)
+            Q_shade, Q_eta = self.online(obs_t)  # (1, 1+seq_len, n_shade), (1, 1+seq_len, n_eta)
 
-        # Read Q from the most recent position (last in sequence)
+        # Read Q from the [CLS] token at position 0 (§4.1 "Policy and value heads")
         if self.boltzmann:
             t = self.tau
-            shade_probs = torch.softmax(Q_shade[0, -1, :] / t, dim=-1)
-            eta_probs   = torch.softmax(Q_eta[0, -1, :]   / t, dim=-1)
+            shade_probs = torch.softmax(Q_shade[0, 0, :] / t, dim=-1)
+            eta_probs   = torch.softmax(Q_eta[0, 0, :]   / t, dim=-1)
             shade_idx = int(torch.multinomial(shade_probs, 1).item())
             eta_idx   = int(torch.multinomial(eta_probs,   1).item())
         elif random.random() < self.epsilon:
             shade_idx = random.randrange(len(self.online.SHADE_BINS))
             eta_idx   = random.randrange(len(self.online.ETA_BINS))
         else:
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
+            shade_idx = int(Q_shade[0, 0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, 0, :].argmax().item())
 
         self._env_steps += 1
         return np.array([shade_idx, eta_idx], dtype=np.int64)
@@ -502,8 +502,11 @@ class R2D2FormerTrainer:
                     mask        = mask * (~d_k).float()
 
                 # Bootstrap: Double DQN — online selects action, target evaluates.
-                # Bootstrap position for learning index i: b + i + n.
-                boot_slice = slice(b + n, b + n + L)          # positions [b+n, T)
+                # forward() returns (B, 1+T, n_bins): position 0 is CLS, positions
+                # 1..T correspond to obs time-steps 0..T-1.  Obs at raw index t maps
+                # to output index t+1, so all slices are shifted by +1 vs. the old
+                # (no-CLS) code.
+                boot_slice = slice(b + n + 1, b + n + L + 1)   # obs positions [b+n, b+n+L)
                 Q_shade_on_boot = Q_shade_on[:, boot_slice, :].detach()  # (B, L, n_shade)
                 Q_eta_on_boot   = Q_eta_on[:, boot_slice, :].detach()
 
@@ -526,10 +529,11 @@ class R2D2FormerTrainer:
                 eta_target   = nstep_rets + gamma_n * Q_eta_next   * not_done
 
             # ── Loss over learning window ───────────────────────────────────
-            # Slice current Q-values and taken actions at positions [b, b+L)
-            learn_slice = slice(b, b + L)
-            shade_taken = act_seqs[:, learn_slice, 0]  # (B, L)
-            eta_taken   = act_seqs[:, learn_slice, 1]
+            # Obs at raw index t is at output position t+1 (CLS offset).
+            # Learning window covers raw indices [b, b+L) → output positions [b+1, b+L+1).
+            learn_slice = slice(b + 1, b + L + 1)
+            shade_taken = act_seqs[:, b:b + L, 0]  # (B, L)  — raw action indices unchanged
+            eta_taken   = act_seqs[:, b:b + L, 1]
 
             Q_shade_learn = Q_shade_on[:, learn_slice, :]  # (B, L, n_shade)
             Q_eta_learn   = Q_eta_on[:, learn_slice, :]
@@ -652,9 +656,10 @@ def evaluate(
             obs_seq[seq_len - len(obs_raw):] = obs_raw
             obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0).to(device)
             with torch.no_grad():
-                Q_shade, Q_eta = policy(obs_t)   # (1, seq_len, n_bins)
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
+                Q_shade, Q_eta = policy(obs_t)   # (1, 1+seq_len, n_bins)
+            # Read from [CLS] token at position 0 (§4.1 "Policy and value heads")
+            shade_idx = int(Q_shade[0, 0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, 0, :].argmax().item())
             action = np.array([shade_idx, eta_idx])
             obs, r, terminated, truncated, _ = env.step(action)
             ep_reward += r

@@ -36,22 +36,22 @@ Running 2000 episodes across 8 processes
   up = deltas[deltas >= 0].sum() / len(midprices)
 /Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
   down = -deltas[deltas < 0].sum() / len(midprices)
-Chunks:  12%|█▎        | 1/8 [00:45<05:21, 45.87s/it]Chunks:  38%|███▊      | 3/8 [00:45<00:59, 11.94s/it]Chunks:  62%|██████▎   | 5/8 [00:46<00:17,  5.85s/it]Chunks:  88%|████████▊ | 7/8 [00:46<00:03,  3.44s/it]Chunks: 100%|██████████| 8/8 [00:46<00:00,  2.66s/it]Chunks: 100%|██████████| 8/8 [00:46<00:00,  5.82s/it]
+Chunks:  12%|█▎        | 1/8 [01:30<10:30, 90.11s/it]Chunks:  25%|██▌       | 2/8 [01:33<03:53, 38.83s/it]Chunks:  38%|███▊      | 3/8 [01:33<01:46, 21.30s/it]Chunks:  50%|█████     | 4/8 [01:33<00:51, 12.95s/it]Chunks:  75%|███████▌  | 6/8 [01:34<00:12,  6.24s/it]Chunks:  88%|████████▊ | 7/8 [01:34<00:04,  4.57s/it]Chunks: 100%|██████████| 8/8 [01:34<00:00,  3.40s/it]Chunks: 100%|██████████| 8/8 [01:34<00:00, 11.85s/it]
 
 ==============================================================
 TRONformer vs 24x S8 — 2000 episodes
 ==============================================================
                                    TRONformer  ZI S8 (mean)
   --------------------------------------------------------
-  Mean profit                        +1209.98      +1258.68
-  Std dev                             2347.54        367.66
-  Std error                             52.49          8.22
-  Median                              +742.33      +1222.05
-  t-stat (vs 0)                         23.05
+  Mean profit                        +1149.43      +1269.95
+  Std dev                             2221.68        369.65
+  Std error                             49.68          8.27
+  Median                              +724.78      +1238.56
+  t-stat (vs 0)                         23.14
   --------------------------------------------------------
-  TRONformer advantage                 -48.71  (-3.9%)
-  t-stat (TRONformer vs ZI S8)          -0.92
-  95% CI (advantage)             [-152.85, +55.43]
+  TRONformer advantage                -120.52  (-9.5%)
+  t-stat (TRONformer vs ZI S8)          -2.39
+  95% CI (advantage)             [-219.23, -21.82]
 ==============================================================
 
 Per-episode profits saved to results/equilibrium/paper_envC_s8_rope_s123_ne24_skewed_eval_s456.csv

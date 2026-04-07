@@ -655,7 +655,8 @@ def train(args):
     print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={N_STEP}")
     print(f"  hidden_dim={hidden_dim}, shade_bins={bins_desc} (n={len(shade_bins)})")
     print(f"  eps_decay_steps={args.eps_decay_steps}, train_freq={TRAIN_FREQ}")
-    print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, lam_zi={ENV_KWARGS['lam_zi']}\n")
+    print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, lam_zi={ENV_KWARGS['lam_zi']}, "
+          f"shock_var={ENV_KWARGS['shock_var']:.2e}, pv_var={ENV_KWARGS['pv_var']:.2e}\n")
 
     t0 = time.time()
 

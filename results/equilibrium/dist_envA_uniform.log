@@ -1,5 +1,5 @@
 Running 2000 episodes across 8 processes
-  Model: runs/tronformer_ne24_s8_envA_uniform/best_model.pt
+  Model: runs/tronformer_ne24_s8_envA_uniform/best_model.pt  [legacy(sinusoidal-PE+CLS),ffn=512]
   BG: 24x S8 ({'shade': [460, 540], 'eta': 0.5})
   lam=0.0005, shock_var=1.00e+06, pv_var=5.00e+06
   lam_zi=0.02, n_layers=2, bins=uniform[0,1000]x100
@@ -36,21 +36,22 @@ Running 2000 episodes across 8 processes
   up = deltas[deltas >= 0].sum() / len(midprices)
 /Users/kshin/Documents/GitHub/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
   down = -deltas[deltas < 0].sum() / len(midprices)
-Chunks:  12%|█▎        | 1/8 [01:17<09:04, 77.80s/it]Chunks:  25%|██▌       | 2/8 [01:17<03:12, 32.11s/it]Chunks:  50%|█████     | 4/8 [01:18<00:48, 12.08s/it]Chunks:  62%|██████▎   | 5/8 [01:18<00:25,  8.47s/it]Chunks:  75%|███████▌  | 6/8 [01:18<00:11,  5.91s/it]Chunks:  88%|████████▊ | 7/8 [01:19<00:04,  4.27s/it]Chunks: 100%|██████████| 8/8 [01:19<00:00,  3.11s/it]Chunks: 100%|██████████| 8/8 [01:19<00:00,  9.97s/it]
+Chunks:  12%|█▎        | 1/8 [01:13<08:33, 73.34s/it]Chunks:  38%|███▊      | 3/8 [01:13<01:36, 19.24s/it]Chunks:  50%|█████     | 4/8 [01:14<00:50, 12.62s/it]Chunks:  62%|██████▎   | 5/8 [01:14<00:25,  8.48s/it]Chunks:  88%|████████▊ | 7/8 [01:14<00:04,  4.56s/it]Chunks: 100%|██████████| 8/8 [01:15<00:00,  3.43s/it]Chunks: 100%|██████████| 8/8 [01:15<00:00,  9.40s/it]
 
-==========================================================
+==============================================================
 TRONformer vs 24x S8 — 2000 episodes
-==========================================================
-  Mean       : +1482.92
-  Std dev    : 12931.55
-  Std error  : 289.16
-  t-stat     : 5.13
-  95% CI     : [+916.17, +2049.67]
-  Median     : +0.00
-  p5 / p25   : -16585.04 / -3560.07
-  p75 / p95  : +5400.27 / +23252.05
-  Min / Max  : -57264.68 / +93208.27
-  Frac > 0   : 48.1%
-==========================================================
+==============================================================
+                                   TRONformer  ZI S8 (mean)
+  --------------------------------------------------------
+  Mean profit                        +2384.60        -39.03
+  Std dev                            13243.67        667.05
+  Std error                            296.14         14.92
+  Median                              +106.13        +68.12
+  t-stat (vs 0)                          8.05
+  --------------------------------------------------------
+  TRONformer advantage               +2423.63  (+6209.9%)
+  t-stat (TRONformer vs ZI S8)           8.17
+  95% CI (advantage)             [+1842.46, +3004.79]
+==============================================================
 
 Per-episode profits saved to results/equilibrium/dist_envA_uniform.csv

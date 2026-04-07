@@ -21,8 +21,70 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from marketsim.agent.tronformer_agent import TRONformerPolicy, SEQ_LEN
+from marketsim.agent.tronformer_agent import (
+    TRONformerPolicy, SEQ_LEN, RotaryEmbedding, PreLNTransformerBlock,
+)
 from marketsim.wrappers.tron_env import TRONEnv
+
+
+# ── RoPE + CLS architecture — for checkpoints between RoPE migration and CLS removal ──
+
+class TRONformerPolicyCLS(nn.Module):
+    """TRONformerPolicy with RoPE + CLS token — matches checkpoints from commits
+    0c40e19 through d9c9307 (after sinusoidal PE was replaced, before CLS was removed)."""
+
+    def __init__(self, input_dim=14, d_model=128, n_heads=8, n_layers=2,
+                 ffn_hidden=512, shade_bins=None, n_shade_bins=42, n_eta_bins=2):
+        super().__init__()
+        self.d_model = d_model
+        if shade_bins is not None:
+            n_shade_bins = len(shade_bins)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        nn.init.normal_(self.cls_token, std=0.02)
+        self.input_proj = nn.Linear(input_dim, d_model)
+        self.rope = RotaryEmbedding(d_head=d_model // n_heads)
+        self.blocks = nn.ModuleList(
+            [PreLNTransformerBlock(d_model, n_heads, ffn_hidden) for _ in range(n_layers)]
+        )
+        self.final_norm = nn.LayerNorm(d_model)
+        self.value_head = nn.Linear(d_model, 1)
+        self.adv_shade = nn.Sequential(
+            nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, n_shade_bins)
+        )
+        self.adv_eta = nn.Sequential(
+            nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, n_eta_bins)
+        )
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        batch, seq_len, _ = x.shape
+        pad_mask = (x.abs().sum(dim=-1) == 0)
+        cls_not_pad = pad_mask.new_zeros(batch, 1)
+        key_pad_mask_bool = torch.cat([cls_not_pad, pad_mask], dim=1)
+        key_pad_additive = torch.zeros(batch, 1, 1, seq_len + 1, device=x.device)
+        key_pad_additive = key_pad_additive.masked_fill(
+            key_pad_mask_bool.unsqueeze(1).unsqueeze(2), float("-inf")
+        )
+        h = self.input_proj(x)
+        cls = self.cls_token.expand(batch, 1, self.d_model)
+        h = torch.cat([cls, h], dim=1)
+        total_len = seq_len + 1
+        cos, sin = self.rope(total_len, x.device)
+        attn_mask = torch.triu(
+            torch.full((total_len, total_len), float("-inf"), device=x.device), diagonal=1
+        )
+        attn_mask[0, :] = 0.0
+        for block in self.blocks:
+            h = block(h, cos, sin, attn_mask, key_pad_mask=key_pad_additive)
+        h = self.final_norm(h)
+        h_cls = h[:, 0, :]
+        V = self.value_head(h_cls)
+        A_shade = self.adv_shade(h_cls)
+        A_eta = self.adv_eta(h_cls)
+        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)
+        Q_eta = V + A_eta - A_eta.mean(dim=-1, keepdim=True)
+        return Q_shade, Q_eta
 
 
 # ── Legacy (sinusoidal PE) architecture — for checkpoints before RoPE migration ──
@@ -146,9 +208,19 @@ def _worker(args):
     torch.manual_seed(int(rng.integers(1 << 31)))
 
     bg = STRATEGIES[bg_strategy]
-    PolicyCls = TRONformerPolicyLegacy if legacy else TRONformerPolicy
-    policy = PolicyCls(input_dim=14, n_layers=n_layers, shade_bins=shade_bins)
-    policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
+    sd = torch.load(weights_path, map_location="cpu")
+    has_cls = "cls_token" in sd
+    has_rope = "rope.inv_freq" in sd
+    if legacy or (has_cls and not has_rope):
+        PolicyCls = TRONformerPolicyLegacy          # sinusoidal PE + CLS (pre-RoPE)
+    elif has_cls and has_rope:
+        PolicyCls = TRONformerPolicyCLS             # RoPE + CLS (intermediate)
+    else:
+        PolicyCls = TRONformerPolicy                # RoPE, no CLS (current)
+    # Auto-detect ffn_hidden from checkpoint (may differ from current default 512)
+    ffn_hidden = int(sd["blocks.0.ffn.0.weight"].shape[0]) if "blocks.0.ffn.0.weight" in sd else 512
+    policy = PolicyCls(input_dim=14, n_layers=n_layers, shade_bins=shade_bins, ffn_hidden=ffn_hidden)
+    policy.load_state_dict(sd)
     policy.eval()
 
     env_kwargs = dict(
@@ -182,8 +254,11 @@ def _worker(args):
             ).unsqueeze(0)
             with torch.no_grad():
                 Q_shade, Q_eta = policy(obs_t)
-            shade_idx = int(Q_shade[0].argmax().item())
-            eta_idx   = int(Q_eta[0].argmax().item())
+            # Architecture returns (batch, 1+seq_len, bins); read [CLS] at position 0.
+            q_s = Q_shade[0, 0]
+            q_e = Q_eta[0, 0]
+            shade_idx = int(q_s.argmax().item())
+            eta_idx   = int(q_e.argmax().item())
             obs, r, terminated, truncated, _ = env.step(
                 np.array([shade_idx, eta_idx])
             )
@@ -262,7 +337,17 @@ def main():
 
     bin_desc = ("skewed[0,600]x42" if args.skew_bins
                 else f"uniform[0,{args.shade_max:.0f}]x{args.n_bins}")
-    arch_desc = "legacy(sinusoidal-PE)" if args.legacy else "current(RoPE)"
+    _sd_peek = torch.load(args.model, map_location="cpu")
+    _has_cls  = "cls_token" in _sd_peek
+    _has_rope = "rope.inv_freq" in _sd_peek
+    if args.legacy or (_has_cls and not _has_rope):
+        arch_desc = "legacy(sinusoidal-PE+CLS)"
+    elif _has_cls and _has_rope:
+        arch_desc = "RoPE+CLS(intermediate)"
+    else:
+        arch_desc = "current(RoPE,no-CLS)"
+    _ffn_hidden = int(_sd_peek["blocks.0.ffn.0.weight"].shape[0]) if "blocks.0.ffn.0.weight" in _sd_peek else 512
+    arch_desc += f",ffn={_ffn_hidden}"
     print(f"Running {args.num_runs} episodes across {n_procs} processes")
     print(f"  Model: {args.model}  [{arch_desc}]")
     print(f"  BG: {args.n_bg}x S{args.bg_strategy} ({STRATEGIES[args.bg_strategy]})")

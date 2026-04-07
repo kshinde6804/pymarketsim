@@ -92,10 +92,11 @@ for i in range(N_RUNS):
         obs_t = torch.tensor(obs_seq, dtype=torch.float32).unsqueeze(0)  # (1, SEQ_LEN, 14)
 
         with torch.no_grad():
-            Q_shade, Q_eta = policy(obs_t)                 # (1, n_shade), (1, n_eta)
+            Q_shade, Q_eta = policy(obs_t)                 # (1, 1+seq_len, n_shade/n_eta)
 
-        shade_idx = int(Q_shade[0].argmax().item())
-        eta_idx   = int(Q_eta[0].argmax().item())
+        # Read from [CLS] token at position 0 (§4.1 "Policy and value heads")
+        shade_idx = int(Q_shade[0, 0, :].argmax().item())
+        eta_idx   = int(Q_eta[0, 0, :].argmax().item())
 
         obs, r, terminated, truncated, _ = env.step(np.array([shade_idx, eta_idx]))
         ep_reward += r

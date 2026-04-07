@@ -158,10 +158,11 @@ def _run_tronformer_cell(args):
             ).unsqueeze(0)                                # (1, seq_len, 14)
 
             with torch.no_grad():
-                Q_shade, Q_eta = policy(obs_t)            # (1, cur_len, n_*)
+                Q_shade, Q_eta = policy(obs_t)            # (1, 1+seq_len, n_*)
 
-            shade_idx = int(Q_shade[0, -1, :].argmax().item())
-            eta_idx   = int(Q_eta[0, -1, :].argmax().item())
+            # Read from [CLS] token at position 0 (§4.1 "Policy and value heads")
+            shade_idx = int(Q_shade[0, 0, :].argmax().item())
+            eta_idx   = int(Q_eta[0, 0, :].argmax().item())
 
             obs, r, terminated, truncated, _ = env.step(
                 np.array([shade_idx, eta_idx])
