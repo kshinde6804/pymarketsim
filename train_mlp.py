@@ -46,13 +46,22 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import random
 import torch
 
+from collections import defaultdict
+
 from marketsim.agent.zero_intelligence_agent import ZIAgent
 from marketsim.fundamental.lazy_mean_reverting import LazyGaussianMeanReverting
 from marketsim.market.market import Market
-from marketsim.simulator.simulator import Simulator
 from marketsim.wrappers.zi_env import ZIEnv
 
 # ── Hyper-parameters ──────────────────────────────────────────────────────────
+
+# Market environment presets (A/B/C from experiment_framework.py).
+# lam_zi is always set to match lam to ensure matched arrival rates.
+_ENV_PRESETS = {
+    'A': dict(lam=0.0005, shock_var=1e6,  pv_var=5e6,  reward_norm=1e2),
+    'B': dict(lam=0.005,  shock_var=1e6,  pv_var=5e6,  reward_norm=1e3),
+    'C': dict(lam=0.012,  shock_var=2e4,  pv_var=2e7,  reward_norm=1e3),
+}
 
 # All 10 equilibrium background strategies — randomized each episode so the
 # agent learns to trade well regardless of which strategy surrounds it.
@@ -74,7 +83,7 @@ BG_STRATEGIES = [
 ]
 
 ENV_KWARGS = dict(
-    num_background_agents=15,  # match equilibrium n_bg
+    num_background_agents=24,  # canonical NE uses n_bg=24
     sim_time=2000,             # match equilibrium sim_time
     lam=0.005,                 # match equilibrium lam (was 0.1 — 20x reduction)
     lam_zi=0.005,              # match equilibrium lam (was 0.1)
@@ -84,12 +93,10 @@ ENV_KWARGS = dict(
     q_max=10,
     pv_var=5e6,
     shade=[250, 500],          # fallback (overridden per episode by bg_strategies)
-    shade_range=[0, 600],      # RL agent shade action range
+    shade_range=[0, 1000],     # RL agent shade action range (covers all ZI strategies)
     normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5},
     # reward normalizer 1e3 (was 1e4): sparser market → ~10x smaller PnL/step
     bg_strategies=BG_STRATEGIES,  # randomize background each episode
-    warmup_fraction=0.0,           # no warm-up: sparse market (lam=0.005) causes
-                                   # repeated reschedules that push RL arrival past sim_time
 )
 
 # Seed multiplier — matches ne_experiment.py so Phase 1/3 seeds are consistent
@@ -106,6 +113,7 @@ SAC_KWARGS = dict(
     train_freq=1,
     gradient_steps=-1,       # one gradient step per env transition collected
     ent_coef="auto",         # automatic entropy tuning
+    policy_kwargs=dict(net_arch=[128, 128]),  # larger actor/critic networks (was SB3 default [64,64])
     verbose=0,
 )
 
@@ -295,53 +303,75 @@ def eval_ne_comparison(model_path: str, ne_strategy_idx: int,
         np.random.seed(run_seed)
         torch.manual_seed(run_seed)
 
-        sim = Simulator(
-            num_background_agents=0,
-            sim_time=ENV_KWARGS["sim_time"],
-            num_assets=1,
-            lam=ENV_KWARGS["lam"],
+        sim_time  = ENV_KWARGS["sim_time"]
+        lam       = ENV_KWARGS["lam"]
+        q_max     = ENV_KWARGS["q_max"]
+        pv_var    = ENV_KWARGS["pv_var"]
+
+        fundamental = LazyGaussianMeanReverting(
             mean=ENV_KWARGS["mean"],
+            final_time=sim_time + 1,
             r=ENV_KWARGS["r"],
             shock_var=ENV_KWARGS["shock_var"],
-            q_max=ENV_KWARGS["q_max"],
-            pv_var=ENV_KWARGS["pv_var"],
         )
-        sim.agents = {}
+        market = Market(fundamental=fundamental, time_steps=sim_time)
 
-        # Agent 0: SAC-MLP deviator — same pv_var/q_max as ZI peers (no advantage)
-        sim.agents[0] = SACDeviator(
-            agent_id=0,
-            market=sim.markets[0],
-            q_max=ENV_KWARGS["q_max"],
-            pv_var=ENV_KWARGS["pv_var"],
+        deviator_id = n_bg
+        all_agents = {}
+
+        # Background ZI agents (IDs 0..n_bg-1) — all play the NE strategy
+        for i in range(n_bg):
+            all_agents[i] = ZIAgent(
+                agent_id=i, market=market, q_max=q_max,
+                shade=ne_strat["shade"], eta=ne_strat["eta"], pv_var=pv_var,
+            )
+
+        # Deviator (ID n_bg): SAC-MLP agent
+        all_agents[deviator_id] = SACDeviator(
+            agent_id=deviator_id, market=market, q_max=q_max, pv_var=pv_var,
             shade_range=ENV_KWARGS["shade_range"],
             normalizers=ENV_KWARGS["normalizers"],
             sac_model=sac_model,
         )
 
-        # Agents 1–n_bg: ZI agents all playing the NE strategy
-        for i in range(1, n_bg + 1):
-            sim.agents[i] = ZIAgent(
-                agent_id=i,
-                market=sim.markets[0],
-                q_max=ENV_KWARGS["q_max"],
-                shade=ne_strat["shade"],
-                eta=ne_strat["eta"],
-                pv_var=ENV_KWARGS["pv_var"],
-            )
+        # Schedule initial arrivals — all agents via Geometric(lam) inter-arrivals
+        arrivals = defaultdict(list)
+        arr_buf = np.random.geometric(lam, 50000) - 1  # 0-indexed geometric
+        arr_idx = 0
+        for agent_id in all_agents:
+            arrivals[int(arr_buf[arr_idx])].append(agent_id)
+            arr_idx += 1
 
-        # Reseed order-shuffle RNG deterministically (matches ne_experiment.py)
-        sim.markets[0].event_queue.rand = random.Random(run_seed + 1)
+        # Simulation loop (matches ZIEnv's event-driven internals)
+        for t in range(sim_time):
+            if not arrivals[t]:
+                continue
+            market.event_queue.set_time(t)
+            for agent_id in arrivals[t]:
+                agent = all_agents[agent_id]
+                market.withdraw_all(agent_id)
+                orders = agent.take_action()
+                market.add_orders(orders)
+                if arr_idx >= len(arr_buf):
+                    arr_buf = np.random.geometric(lam, 50000) - 1
+                    arr_idx = 0
+                arrivals[int(arr_buf[arr_idx]) + 1 + t].append(agent_id)
+                arr_idx += 1
+            new_orders = market.step()
+            for matched in new_orders:
+                aid = matched.order.agent_id
+                qty  = matched.order.order_type * matched.order.quantity
+                cash = -matched.price * matched.order.quantity * matched.order.order_type
+                all_agents[aid].update_position(qty, cash)
 
-        sim.run()
-
-        fv = sim.markets[0].get_final_fundamental()
+        market.event_queue.set_time(sim_time)
+        fv = market.get_final_fundamental()
 
         def profit(agent):
             return agent.get_pos_value() + agent.position * fv + agent.cash
 
-        mlp_p    = profit(sim.agents[0])
-        bg_profs = [profit(sim.agents[i]) for i in range(1, n_bg + 1)]
+        mlp_p    = profit(all_agents[deviator_id])
+        bg_profs = [profit(all_agents[i]) for i in range(n_bg)]
         mean_bg  = float(np.mean(bg_profs))
 
         mlp_profits.append(mlp_p)
@@ -403,6 +433,9 @@ def parse_args():
                    help="Run full-simulator MLP-vs-ZI comparison (requires --load and --bg-strategy).")
     p.add_argument("--ne-runs", type=int, default=500,
                    help="Number of simulator runs for --eval-ne (default 500).")
+    p.add_argument("--env", type=str, default="B", choices=["A", "B", "C"],
+                   help="Market environment preset (A/B/C). Sets lam, shock_var, pv_var, "
+                        "and reward_norm. lam_zi is always matched to lam. (default: B)")
     return p.parse_args()
 
 
@@ -415,6 +448,16 @@ def main():
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
         print(f"Global seed set to {args.seed}")
+
+    # ── Environment preset ────────────────────────────────────────────────
+    preset = _ENV_PRESETS[args.env]
+    ENV_KWARGS["lam"]       = preset["lam"]
+    ENV_KWARGS["lam_zi"]    = preset["lam"]   # always matched
+    ENV_KWARGS["shock_var"] = preset["shock_var"]
+    ENV_KWARGS["pv_var"]    = preset["pv_var"]
+    ENV_KWARGS["normalizers"]["reward"] = preset["reward_norm"]
+    print(f"Environment: {args.env}  |  lam={preset['lam']}  shock_var={preset['shock_var']}  "
+          f"pv_var={preset['pv_var']}  reward_norm={preset['reward_norm']}")
 
     # ── Background strategy override ──────────────────────────────────────
     if args.bg_strategy is not None:

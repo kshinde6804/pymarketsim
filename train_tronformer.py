@@ -93,7 +93,6 @@ ENV_KWARGS = dict(
     shade=[250, 500],
     normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5},
     bg_strategies=BG_STRATEGIES,
-    warmup_fraction=0.0,
     shade_bins=UNIFORM_SHADE_BINS,
 )
 

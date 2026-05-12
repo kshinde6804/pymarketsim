@@ -95,12 +95,15 @@ def _run_tron_cell(args):
     mark-to-market PnL (same quantity as the raw-Simulator approach).
 
     Args:
-        args: (bg_idx, weights_path, num_runs, n_bg, lam_zi)
+        args: (bg_idx, weights_path, num_runs, n_bg, lam_zi, env_params)
+            env_params: dict with keys lam, sim_time, mean, r, shock_var, q_max, pv_var.
+            Passed explicitly so that worker processes (macOS 'spawn') receive the
+            CLI-overridden values rather than the module-level defaults from ENV.
 
     Returns:
         (bg_idx, mean_deviator_profit)
     """
-    bg_idx, weights_path, num_runs, n_bg, lam_zi = args
+    bg_idx, weights_path, num_runs, n_bg, lam_zi, env_params = args
 
     bg = STRATEGIES[bg_idx]
     reward_norm = NORMALIZERS["reward"]
@@ -109,20 +112,25 @@ def _run_tron_cell(args):
     policy.load_state_dict(torch.load(weights_path, map_location="cpu"))
     policy.eval()
 
+    # Use the policy's instance SHADE_BINS (may differ from class default if trained
+    # with --skew-bins); pass them to TRONEnv so action indices map to the same
+    # shade values at eval time as during training.
+    shade_bins = policy.SHADE_BINS
+
     env = TRONEnv(
         num_background_agents=n_bg,
-        sim_time=ENV["sim_time"],
-        lam=ENV["lam"],
+        sim_time=env_params["sim_time"],
+        lam=env_params["lam"],
         lam_zi=lam_zi,
-        mean=ENV["mean"],
-        r=ENV["r"],
-        shock_var=ENV["shock_var"],
-        q_max=ENV["q_max"],
-        pv_var=ENV["pv_var"],
+        mean=env_params["mean"],
+        r=env_params["r"],
+        shock_var=env_params["shock_var"],
+        q_max=env_params["q_max"],
+        pv_var=env_params["pv_var"],
         shade=[250, 500],
         normalizers=NORMALIZERS,
         bg_strategies=[{'shade': bg['shade'], 'eta': bg['eta']}],
-        warmup_fraction=0.0,
+        shade_bins=shade_bins,
     )
 
     dev_profits = []
@@ -166,7 +174,10 @@ def run_tron_column(
     """
     n_strats = len(STRATEGIES)
     n_bg = ENV['n_bg']
-    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi) for bg in range(n_strats)]
+    # Snapshot env params into a plain dict so worker processes (macOS 'spawn')
+    # receive the CLI-overridden values rather than re-importing stale module globals.
+    env_params = {k: ENV[k] for k in ('lam', 'sim_time', 'mean', 'r', 'shock_var', 'q_max', 'pv_var')}
+    tasks = [(bg, weights_path, num_runs, n_bg, lam_zi, env_params) for bg in range(n_strats)]
 
     if n_processes is None:
         n_processes = min(mp.cpu_count(), n_strats)
@@ -315,6 +326,18 @@ def parse_args():
         "--lam-zi", type=float, default=DEFAULT_LAM_ZI,
         help=f"RL agent arrival rate — must match training lam_zi (default: {DEFAULT_LAM_ZI})",
     )
+    p.add_argument(
+        "--lam", type=float, default=None,
+        help="Override market arrival rate lambda in ENV (default: ENV['lam']=0.005)",
+    )
+    p.add_argument(
+        "--shock-var", type=float, default=None,
+        help="Override fundamental shock variance in ENV",
+    )
+    p.add_argument(
+        "--pv-var", type=float, default=None,
+        help="Override private value variance in ENV",
+    )
     return p.parse_args()
 
 
@@ -322,10 +345,21 @@ def main():
     args = parse_args()
 
     ENV['n_bg'] = args.n_bg
+    if args.lam is not None:
+        ENV['lam'] = args.lam
+    if args.shock_var is not None:
+        ENV['shock_var'] = args.shock_var
+    if args.pv_var is not None:
+        ENV['pv_var'] = args.pv_var
+
+    print(f"ENV: lam={ENV['lam']}, shock_var={ENV['shock_var']:.2e}, pv_var={ENV['pv_var']:.2e}, n_bg={ENV['n_bg']}")
 
     # ── Load ZI×ZI baseline ───────────────────────────────────────────────
     print(f"Loading ZI×ZI baseline from {args.baseline} ...")
     zi_df = pd.read_csv(args.baseline, index_col=0)
+    # Keep only the 10 ZI strategy columns (drop any extra like TRONformer)
+    zi_cols = [c for c in zi_df.columns if c.startswith('S')]
+    zi_df = zi_df[zi_cols]
     print(f"  Loaded {zi_df.shape[0]}×{zi_df.shape[1]} matrix.\n")
 
     # ── Run TRON deviator column ──────────────────────────────────────────

@@ -4,15 +4,15 @@ TRONAgent — Trained Recurrent Order Network agent (ICAIF24).
 Uses a Dueling DQN architecture with an LSTM recurrent component to select
 discrete shade and eta actions, then applies the standard ZI pricing formula.
 
-Architecture:
+Architecture (per paper §4.3 / Figure 3):
     Input: 14-dim (13 ZIEnv features + side indicator)
     Shared encoder: Linear(14→128) → ReLU
     Recurrent: LSTM(128, 128, batch_first=True)
-    Value head: Linear(128→1)  [shared scalar V(s)]
-    Advantage shade: Linear(128→128) → ReLU → Linear(128→42)
-    Advantage eta:   Linear(128→128) → ReLU → Linear(128→2)
-    Q_shade = V + A_shade − mean(A_shade)  →  42 discrete shade values
-    Q_eta   = V + A_eta   − mean(A_eta)    →  2 discrete eta values
+    Value head:     Linear(128→128) → ReLU → Linear(128→2)  [separate V per head]
+    Advantage shade: Linear(128→128) → ReLU → Linear(128→21)
+    Advantage eta:   Linear(128→128) → ReLU → Linear(128→21)
+    Q_shade = V[...,0:1] + A_shade − mean(A_shade)  →  21 discrete shade values
+    Q_eta   = V[...,1:2] + A_eta   − mean(A_eta)    →  21 discrete eta values
 
 Observation features (14-dim):
     [0]  time_left          (sim_time - t) / sim_time
@@ -61,15 +61,15 @@ class TRONPolicy(nn.Module):
         n_eta_bins:   Number of discrete eta actions (default 2).
     """
 
-    SHADE_BINS: np.ndarray = np.linspace(0, 600, 42)  # 42 uniformly spaced values (default)
-    ETA_BINS: List[float] = [0.0, 1.0]                 # binary: market-take vs market-make
+    SHADE_BINS: np.ndarray = np.linspace(0, 600, 21)   # 21 uniformly spaced values (paper §4.3)
+    ETA_BINS: np.ndarray = np.linspace(0, 1, 21)       # 21 values in [0,1] (paper §4.3)
 
     def __init__(
         self,
         input_dim: int = 14,
         hidden_dim: int = 128,
-        n_shade_bins: int = 42,
-        n_eta_bins: int = 2,
+        n_shade_bins: int = 21,
+        n_eta_bins: int = 21,
         shade_bins: Optional[np.ndarray] = None,
     ):
         super().__init__()
@@ -84,8 +84,12 @@ class TRONPolicy(nn.Module):
         )
         self.lstm = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
 
-        # Shared value head
-        self.value_head = nn.Linear(hidden_dim, 1)
+        # Value head: separate V scalar per action head (paper Figure 3)
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+        )
 
         # Advantage streams
         self.adv_shade = nn.Sequential(
@@ -113,8 +117,8 @@ class TRONPolicy(nn.Module):
                  If None, initializes to zeros.
 
         Returns:
-            Q_shade: (batch, seq_len, n_shade_bins)
-            Q_eta:   (batch, seq_len, n_eta_bins)
+            Q_shade: (batch, seq_len, n_shade_bins)  — uses V[...,0:1]
+            Q_eta:   (batch, seq_len, n_eta_bins)    — uses V[...,1:2]
             (h, c):  Updated LSTM states.
         """
         # Handle 2-D input (batch, input_dim) → (batch, 1, input_dim)
@@ -131,14 +135,14 @@ class TRONPolicy(nn.Module):
         # LSTM
         lstm_out, (h, c) = self.lstm(enc, h_c)  # (batch, seq_len, hidden_dim)
 
-        # Dueling: V + (A - mean(A))
-        V = self.value_head(lstm_out)  # (batch, seq_len, 1)
+        # Dueling: separate V per head (paper Figure 3)
+        V = self.value_head(lstm_out)  # (batch, seq_len, 2)
 
         A_shade = self.adv_shade(lstm_out)  # (batch, seq_len, n_shade)
         A_eta = self.adv_eta(lstm_out)      # (batch, seq_len, n_eta)
 
-        Q_shade = V + A_shade - A_shade.mean(dim=-1, keepdim=True)
-        Q_eta = V + A_eta - A_eta.mean(dim=-1, keepdim=True)
+        Q_shade = V[..., 0:1] + A_shade - A_shade.mean(dim=-1, keepdim=True)
+        Q_eta   = V[..., 1:2] + A_eta   - A_eta.mean(dim=-1, keepdim=True)
 
         if squeeze:
             Q_shade = Q_shade.squeeze(1)  # (batch, n_shade)

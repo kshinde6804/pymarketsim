@@ -48,14 +48,13 @@ from marketsim.wrappers.tron_env import TRONEnv
 
 # ── Shade bin options ──────────────────────────────────────────────────────────
 
-# Default: 42 uniform bins over [0, 600] (14.3 spacing throughout)
-UNIFORM_SHADE_BINS = np.linspace(0, 600, 42)
+# Default: 21 uniform bins over [0, 600] (30.0 spacing) — matches paper §4.3 Figure 3
+UNIFORM_SHADE_BINS = np.linspace(0, 600, 21)
 
-# Skewed: 10 coarse bins in [0, 300), 32 fine bins in [300, 600] (~9.7 spacing
-# in the competitive region near S8). More resolution where it matters.
+# Skewed: 6 coarse bins in [0, 300), 16 fine bins in [300, 600] — still 21 total
 SKEWED_SHADE_BINS = np.concatenate([
-    np.linspace(0, 300, 11)[:-1],  # 0, 30, 60, ..., 270
-    np.linspace(300, 600, 32),      # 300, 309.7, ..., 600
+    np.linspace(0, 300, 7)[:-1],   # 0, 50, 100, ..., 250  (6 bins)
+    np.linspace(300, 600, 16),     # 300, 320, ..., 600    (16 bins)
 ])
 
 # ── ENV hyper-parameters (match equilibrium experiment) ───────────────────────
@@ -92,14 +91,15 @@ ENV_KWARGS = dict(
     shade=[250, 500],
     normalizers={"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5},
     bg_strategies=BG_STRATEGIES,
-    warmup_fraction=0.0,
     shade_bins=UNIFORM_SHADE_BINS,  # overridden to SKEWED_SHADE_BINS via --skew-bins
 )
 
 # ── R2D2 hyper-parameters ─────────────────────────────────────────────────────
 
 SEQ_LEN = 32          # ~10 steps/episode at lam_zi=0.005; 32 contains full episodes (99.9th pctile ~22)
-BURNIN = 4            # Small warmup; h0=0 at episode start so no stale state
+BURNIN = 0            # h0=0 is always fresh (episode start) so no stale state to warm up from;
+                      # burnin=0 lets gradients flow through all real steps, including early ones
+                      # that are relevant to test-time performance.
 N_STEP = 5            # n-step return horizon
 GAMMA = 0.99          # Discount factor
 BATCH_SIZE = 64       # Sequences sampled per gradient update
@@ -113,7 +113,7 @@ GRAD_CLIP = 10.0
 LEARNING_STARTS = 100    # Sequences collected before first gradient step
 TRAIN_FREQ = 4           # Gradient update every N env steps
 EVAL_FREQ = 50_000       # Evaluate every N environment steps
-EVAL_EPISODES = 100
+EVAL_EPISODES = 500
 
 
 # ── Replay Buffer ─────────────────────────────────────────────────────────────
@@ -427,8 +427,13 @@ class R2D2Trainer:
         learn_len = T - self.burnin  # steps for which we compute loss
 
         # ── Burnin: run online LSTM through first `burnin` steps ──────────
-        with torch.no_grad():
-            _, _, (h_burn, c_burn) = self.online(obs[:, :self.burnin, :], (h0, c0))
+        # When burnin=0 (recommended since h0 is always fresh zeros), skip this
+        # and pass h0 directly so we learn from every step of the episode.
+        if self.burnin > 0:
+            with torch.no_grad():
+                _, _, (h_burn, c_burn) = self.online(obs[:, :self.burnin, :], (h0, c0))
+        else:
+            h_burn, c_burn = h0, c0
 
         # ── Online Q-values for learning steps ────────────────────────────
         self.online.train()
@@ -454,49 +459,62 @@ class R2D2Trainer:
         dones_learn = dones[:, self.burnin:]  # (B, learn_len)
         n_returns = compute_nstep_returns(rews_learn, dones_learn, self.gamma, self.n_step)
 
-        # ── Double DQN targets ─────────────────────────────────────────────
-        # Online selects greedy action on s'; target evaluates it.
-        obs_next = obs[:, self.burnin + 1:, :]  # (B, learn_len-1, D)
+        # ── Double DQN targets with correct n-step bootstrap ──────────────
+        # For step t in [0, n_boot-1] (n_boot = learn_len - n_step):
+        #   target_t = n_returns_t + γ^n * Q_target(s_{t+n}, argmax_a Q_online(s_{t+n}))
+        #              masked by: no done in [t, t+n_step-1]
+        # For step t in [n_boot, learn_len-1]: target_t = n_returns_t (no valid s_{t+n})
+        #
+        # Q_shade_online[:, n_step:, :] gives Q at s_{t+n} for t in [0, n_boot-1]
+        # with correct LSTM context (already computed above in the full forward pass).
+        # The target network is run through the full learning window for the same reason.
+
+        n_boot  = learn_len - self.n_step
+        gamma_n = self.gamma ** self.n_step
+
         with torch.no_grad():
-            # Run target through burnin too for consistency
-            _, _, (h_tgt, c_tgt) = self.target(obs[:, :self.burnin, :], (h0, c0))
+            # Target network: burnin → full learning window (correct LSTM context at each step)
+            if self.burnin > 0:
+                _, _, (h_tgt, c_tgt) = self.target(obs[:, :self.burnin, :], (h0, c0))
+            else:
+                h_tgt, c_tgt = h0, c0
+            Q_shade_tgt, Q_eta_tgt, _ = self.target(obs[:, self.burnin:, :], (h_tgt, c_tgt))
+            # Q_shade_tgt: (B, learn_len, n_shade)
 
-            # Online greedy action on s'
-            Q_shade_next_online, Q_eta_next_online, _ = self.online(
-                obs_next, (h_burn.detach(), c_burn.detach())
-            )
-            shade_next_act = Q_shade_next_online.argmax(dim=-1)  # (B, learn_len-1)
-            eta_next_act   = Q_eta_next_online.argmax(dim=-1)
-
-            # Target value at online's greedy action
-            Q_shade_next_tgt, Q_eta_next_tgt, _ = self.target(obs_next, (h_tgt, c_tgt))
-            Q_shade_next_val = Q_shade_next_tgt.gather(
-                2, shade_next_act.unsqueeze(-1)
-            ).squeeze(-1)  # (B, learn_len-1)
-            Q_eta_next_val = Q_eta_next_tgt.gather(
-                2, eta_next_act.unsqueeze(-1)
-            ).squeeze(-1)
-
-            # Bootstrap: not available for the last step in the learning window
-            not_done_last = (~dones_learn[:, -1]).float()  # (B,)
-            gamma_n = self.gamma ** self.n_step
-
-            # Targets for steps 0..learn_len-2 use bootstrapped value
-            # Target for step learn_len-1 uses only n-step return
             shade_target = n_returns.clone()
             eta_target   = n_returns.clone()
 
-            shade_target[:, :-1] = (
-                n_returns[:, :-1]
-                + gamma_n * Q_shade_next_val * (~dones_learn[:, :-1]).float()
-            )
-            eta_target[:, :-1] = (
-                n_returns[:, :-1]
-                + gamma_n * Q_eta_next_val * (~dones_learn[:, :-1]).float()
-            )
-            # Last step: just n-step return (no bootstrap)
-            shade_target[:, -1] = n_returns[:, -1]
-            eta_target[:, -1]   = n_returns[:, -1]
+            if n_boot > 0:
+                # Double DQN: online selects action at s_{t+n}, target evaluates it.
+                # Q_shade_online[:, n_step:, :] = Q(s_{t+n}) for t=0..n_boot-1.
+                shade_next_act = Q_shade_online.detach()[:, self.n_step:, :].argmax(dim=-1)  # (B, n_boot)
+                eta_next_act   = Q_eta_online.detach()[:, self.n_step:, :].argmax(dim=-1)
+
+                # Target Q values at s_{t+n}
+                Q_shade_next_val = Q_shade_tgt[:, self.n_step:, :].gather(
+                    2, shade_next_act.unsqueeze(-1)
+                ).squeeze(-1)  # (B, n_boot)
+                Q_eta_next_val = Q_eta_tgt[:, self.n_step:, :].gather(
+                    2, eta_next_act.unsqueeze(-1)
+                ).squeeze(-1)
+
+                # Done mask: any done in window [t, t+n_step-1] → no bootstrap.
+                # Use sliding max (OR) via unfold over dones_learn.
+                # unfold gives (B, learn_len - n_step + 1, n_step); first n_boot windows
+                # cover t=0..n_boot-1 with right endpoint t+n_step-1 ≤ learn_len-2.
+                dones_float  = dones_learn.float()  # (B, learn_len)
+                done_windows = dones_float.unfold(-1, self.n_step, 1)[:, :n_boot, :]  # (B, n_boot, n_step)
+                done_in_window = done_windows.max(dim=-1).values  # (B, n_boot)
+
+                shade_target[:, :n_boot] = (
+                    n_returns[:, :n_boot]
+                    + gamma_n * Q_shade_next_val * (1.0 - done_in_window)
+                )
+                eta_target[:, :n_boot] = (
+                    n_returns[:, :n_boot]
+                    + gamma_n * Q_eta_next_val * (1.0 - done_in_window)
+                )
+            # Steps [n_boot:]: shade_target/eta_target already = n_returns from clone
 
         # ── Loss ──────────────────────────────────────────────────────────
         loss_shade = self.loss_fn(Q_shade_taken, shade_target.detach())
@@ -784,6 +802,8 @@ def parse_args():
                    help="Episodes for --eval-only mode (default 50)")
     p.add_argument("--seed", type=int, default=42,
                    help="Global random seed for reproducibility (default 42)")
+    p.add_argument("--reward-norm", type=float, default=None,
+                   help="Override reward normalizer in ENV_KWARGS (default: 1e3)")
     return p.parse_args()
 
 
@@ -812,6 +832,8 @@ def main():
     if args.bg_strategy is not None:
         strat = _STRATEGIES[args.bg_strategy]
         ENV_KWARGS['bg_strategies'] = [{'shade': strat['shade'], 'eta': strat['eta']}]
+    if args.reward_norm is not None:
+        ENV_KWARGS['normalizers'] = dict(ENV_KWARGS['normalizers'], reward=args.reward_norm)
     if args.eval_only:
         eval_only(args)
     else:

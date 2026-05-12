@@ -60,7 +60,7 @@ def test_zienv_random_loop():
     env = ZIEnv(**ENV_KWARGS)
 
     obs, info = env.reset()
-    assert obs.shape == (13,), f"Expected obs shape (13,), got {obs.shape}"
+    assert obs.shape == (14,), f"Expected obs shape (14,), got {obs.shape}"
     assert obs.dtype == np.float64, f"Expected float64, got {obs.dtype}"
     print(f"  obs shape:  {obs.shape}")
     print(f"  obs sample: {np.round(obs, 4)}")
@@ -210,7 +210,8 @@ def test_obs_consistency():
     obs_env, _ = env.reset()
 
     # After reset, env.zi_agent IS mlp, so build_obs() uses identical state
-    obs_agent = mlp.build_obs()
+    # Pass env.current_side so the side feature matches between ZIEnv and MLPAgent
+    obs_agent = mlp.build_obs(env.current_side)
 
     diff = np.abs(obs_env - obs_agent)
     print(f"  ZIEnv obs    : {np.round(obs_env,   4)}")

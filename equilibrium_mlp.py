@@ -28,11 +28,13 @@ from typing import List
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+from collections import defaultdict
 from tqdm import tqdm
 
-from marketsim.simulator.simulator import Simulator
 from marketsim.agent.zero_intelligence_agent import ZIAgent
 from marketsim.agent.mlp_agent import MLPAgent
+from marketsim.fundamental.lazy_mean_reverting import LazyGaussianMeanReverting
+from marketsim.market.market import Market
 from marketsim.fourheap.constants import BUY, SELL
 from marketsim.fourheap.order import Order
 from marketsim.wrappers.metrics import (
@@ -78,7 +80,7 @@ ENV = {
     'pv_var':    5e6,
     'q_max':     10,
     'sim_time':  2000,
-    'n_bg':      15,
+    'n_bg':      24,
 }
 
 # ---------------------------------------------------------------------------
@@ -89,9 +91,16 @@ DEFAULT_MODEL  = "runs/sac_zi_v2/best_model"
 DEFAULT_RUNS   = 1000        # runs per MLP-deviator cell
 MLP_LABEL      = "MLP-SAC"
 MLP_COL        = 10          # column index in the extended matrix
-NORMALIZERS    = {"fundamental": 1e5, "invt": 10, "reward": 1e4, "pv": 5e5}
-SHADE_RANGE    = [0, 600]    # must match train_mlp.py shade_range
+NORMALIZERS    = {"fundamental": 1e5, "invt": 10, "reward": 1e3, "pv": 5e5}
+SHADE_RANGE    = [0, 1000]   # must match train_mlp.py shade_range
 BASELINE_CSV   = "results/equilibrium/equilibrium_results.csv"
+
+# Market environment presets — must match train_mlp.py _ENV_PRESETS
+_ENV_PRESETS = {
+    'A': dict(lam=0.0005, shock_var=1e6,  pv_var=5e6),
+    'B': dict(lam=0.005,  shock_var=1e6,  pv_var=5e6),
+    'C': dict(lam=0.012,  shock_var=2e4,  pv_var=2e7),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +132,12 @@ class SACDeviator(MLPAgent):
 
     # ── Observation ───────────────────────────────────────────────────────────
 
-    def build_obs(self) -> np.ndarray:
-        """13-feature observation using market.end_time as sim_time.
+    def build_obs(self, side: int) -> np.ndarray:
+        """14-feature observation using market.end_time as sim_time.
+
+        Args:
+            side: BUY (1) or SELL (-1) — pre-sampled before building obs so the
+                  agent can condition shade/eta on which side it will trade.
 
         Uses market.end_time instead of fundamental.final_time - 1 so that
         time_left is computed correctly for GaussianMeanReverting (which sets
@@ -161,11 +174,12 @@ class SACDeviator(MLPAgent):
         est_n       = est_fund / N["fundamental"]
         pv_buy_n    = np.clip(pv_buy  / pv_n, -1.0, 1.0)
         pv_sell_n   = np.clip(pv_sell / pv_n, -1.0, 1.0)
+        side_n      = 0.0 if side == BUY else 1.0
 
         obs = np.array(
             [time_left_n, fund_n, ask_n, bid_n, inv_n, mp_n,
              vol_imb, que_imb, np.clip(rv, 0.0, 1.0), rsi_n,
-             est_n, pv_buy_n, pv_sell_n],
+             est_n, pv_buy_n, pv_sell_n, side_n],
             dtype=np.float64,
         )
         # Guard against NaN/inf from metrics with no history (no warm-up in Simulator).
@@ -178,8 +192,13 @@ class SACDeviator(MLPAgent):
     # ── Action ────────────────────────────────────────────────────────────────
 
     def take_action(self) -> List[Order]:
-        """Use SAC policy to select (shade, eta), then apply ZI pricing."""
-        obs = self.build_obs()
+        """Use SAC policy to select (shade, eta), then apply ZI pricing.
+
+        Side is pre-sampled before building the observation so that the agent
+        can condition shade/eta on which side it will be trading.
+        """
+        side = random.choice([BUY, SELL])
+        obs = self.build_obs(side)
         action, _ = self.sac_model.predict(obs, deterministic=True)
         shade_norm = float(action[0])
         eta        = float(action[1])
@@ -188,7 +207,6 @@ class SACDeviator(MLPAgent):
         shade_val = shade_norm * (d_max - d_min) + d_min
 
         t        = self.market.get_time()
-        side     = random.choice([BUY, SELL])
         estimate = self.estimate_fundamental()
         pv_value = self.pv.value_for_exchange(self.position, side)
 
@@ -241,45 +259,69 @@ def _run_mlp_cell(args):
     dev_profits = []
 
     for _ in range(num_runs):
-        sim = Simulator(
-            num_background_agents=0,
-            sim_time=ENV["sim_time"],
-            num_assets=1,
-            lam=ENV["lam"],
+        sim_time = ENV["sim_time"]
+        n_bg     = ENV["n_bg"]
+        lam      = ENV["lam"]
+        q_max    = ENV["q_max"]
+        pv_var   = ENV["pv_var"]
+
+        fundamental = LazyGaussianMeanReverting(
             mean=ENV["mean"],
+            final_time=sim_time + 1,
             r=ENV["r"],
             shock_var=ENV["shock_var"],
-            q_max=ENV["q_max"],
-            pv_var=ENV["pv_var"],
         )
-        sim.agents = {}
+        market = Market(fundamental=fundamental, time_steps=sim_time)
 
-        # Deviator: MLP-SAC agent
-        sim.agents[0] = SACDeviator(
-            agent_id=0,
-            market=sim.markets[0],
-            q_max=ENV["q_max"],
-            pv_var=ENV["pv_var"],
-            shade_range=SHADE_RANGE,
-            normalizers=NORMALIZERS,
-            sac_model=sac_model,
-        )
+        deviator_id = n_bg
+        all_agents = {}
 
-        # Background agents: all play the fixed ZI strategy bg
-        for i in range(1, ENV["n_bg"] + 1):
-            sim.agents[i] = ZIAgent(
-                agent_id=i,
-                market=sim.markets[0],
-                q_max=ENV["q_max"],
-                shade=bg["shade"],
-                eta=bg["eta"],
-                pv_var=ENV["pv_var"],
+        # Background agents: all play the fixed ZI strategy bg (IDs 0..n_bg-1)
+        for i in range(n_bg):
+            all_agents[i] = ZIAgent(
+                agent_id=i, market=market, q_max=q_max,
+                shade=bg["shade"], eta=bg["eta"], pv_var=pv_var,
             )
 
-        sim.run()
+        # Deviator: MLP-SAC agent (ID n_bg)
+        all_agents[deviator_id] = SACDeviator(
+            agent_id=deviator_id, market=market, q_max=q_max, pv_var=pv_var,
+            shade_range=SHADE_RANGE, normalizers=NORMALIZERS, sac_model=sac_model,
+        )
 
-        fv  = sim.markets[0].get_final_fundamental()
-        dev = sim.agents[0]
+        # Schedule initial arrivals — all agents via Geometric(lam) inter-arrivals
+        arrivals = defaultdict(list)
+        arr_buf = np.random.geometric(lam, 50000) - 1  # 0-indexed geometric
+        arr_idx = 0
+        for agent_id in all_agents:
+            arrivals[int(arr_buf[arr_idx])].append(agent_id)
+            arr_idx += 1
+
+        # Simulation loop (matches ZIEnv's event-driven internals)
+        for t in range(sim_time):
+            if not arrivals[t]:
+                continue
+            market.event_queue.set_time(t)
+            for agent_id in arrivals[t]:
+                agent = all_agents[agent_id]
+                market.withdraw_all(agent_id)
+                orders = agent.take_action()
+                market.add_orders(orders)
+                if arr_idx >= len(arr_buf):
+                    arr_buf = np.random.geometric(lam, 50000) - 1
+                    arr_idx = 0
+                arrivals[int(arr_buf[arr_idx]) + 1 + t].append(agent_id)
+                arr_idx += 1
+            new_orders = market.step()
+            for matched in new_orders:
+                aid  = matched.order.agent_id
+                qty  = matched.order.order_type * matched.order.quantity
+                cash = -matched.price * matched.order.quantity * matched.order.order_type
+                all_agents[aid].update_position(qty, cash)
+
+        market.event_queue.set_time(sim_time)
+        fv  = market.get_final_fundamental()
+        dev = all_agents[deviator_id]
         dev_profits.append(dev.get_pos_value() + dev.position * fv + dev.cash)
 
     return bg_idx, float(np.mean(dev_profits))
@@ -413,11 +455,20 @@ def parse_args():
                    help="Worker processes (default: cpu_count)")
     p.add_argument("--output", default="results/equilibrium/equilibrium_mlp_results.csv",
                    help="Output CSV path (default: results/equilibrium/equilibrium_mlp_results.csv)")
+    p.add_argument("--env", type=str, default="B", choices=["A", "B", "C"],
+                   help="Market environment preset (A/B/C). Sets lam, shock_var, pv_var. (default: B)")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+
+    # ── Apply environment preset ─────────────────────────────────────────────
+    preset = _ENV_PRESETS[args.env]
+    ENV["lam"]       = preset["lam"]
+    ENV["shock_var"] = preset["shock_var"]
+    ENV["pv_var"]    = preset["pv_var"]
+    print(f"Environment: {args.env}  |  lam={preset['lam']}  shock_var={preset['shock_var']}  pv_var={preset['pv_var']}")
 
     # ── Load ZI×ZI baseline results ──────────────────────────────────────────
     print(f"Loading ZI×ZI baseline from {BASELINE_CSV} ...")

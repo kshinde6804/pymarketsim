@@ -3,9 +3,11 @@ ZIEnv — Gymnasium environment for training a ZI-style RL agent.
 
 The RL agent controls `shade` (surplus demanded) and `eta` (liquidity-taking
 threshold) via a 2-dimensional continuous action space.  Background ZI traders
-provide market liquidity according to independent Poisson arrival processes.
+and the RL agent all arrive via the same Geometric(lam) / Geometric(lam_zi)
+inter-arrival process — no explicit warm-up.  The RL agent's first arrival is
+sampled from Geometric(lam_zi) just like background arrivals.
 
-Observation  (13 features, all in [-1, 1] or [0, 1]):
+Observation  (14 features, all in [-1, 1] or [0, 1]):
     [0]  time_left          (sim_time - t) / sim_time
     [1]  fundamental        observed fundamental / N["fundamental"]
     [2]  best_ask           best ask / N["fundamental"];  1.0 when book empty
@@ -19,6 +21,7 @@ Observation  (13 features, all in [-1, 1] or [0, 1]):
     [10] est_fundamental    Bayesian fundamental estimate / N["fundamental"]
     [11] pv_buy             clip(pv.value_for_exchange(pos, BUY)  / N["pv"], -1, 1)
     [12] pv_sell            clip(pv.value_for_exchange(pos, SELL) / N["pv"], -1, 1)
+    [13] side               0.0 = BUY, 1.0 = SELL (pre-assigned before obs)
 
 Action  (2 values in [0, 1]):
     [0]  shade_norm  →  shade = shade_norm * (shade_max - shade_min) + shade_min
@@ -56,7 +59,12 @@ def sample_arrivals(p, num_samples):
 
 
 class ZIEnv(gym.Env):
-    """Gymnasium environment for training a ZI-style RL agent in PyMarketSim."""
+    """Gymnasium environment for training a ZI-style RL agent in PyMarketSim.
+
+    The RL agent and all background agents share a single arrival pool — no
+    explicit warm-up phase.  Both use Geometric inter-arrival sampling;
+    background agents use rate `lam`, the RL agent uses rate `lam_zi`.
+    """
 
     metadata = {"render_modes": []}
 
@@ -75,14 +83,13 @@ class ZIEnv(gym.Env):
         shade_range=None,
         normalizers=None,
         bg_strategies=None,
-        warmup_fraction: float = 0.1,
     ):
         """
         Args:
             num_background_agents: Number of background ZI traders.
             sim_time:              Total simulation time steps per episode.
-            lam:                   Arrival rate for background agents (Poisson).
-            lam_zi:                Arrival rate for the RL agent (Poisson).
+            lam:                   Arrival rate for background agents (Geometric).
+            lam_zi:                Arrival rate for the RL agent (Geometric).
             mean:                  Long-run fundamental mean.
             r:                     Mean-reversion rate.
             shock_var:             Variance of fundamental shocks.
@@ -98,21 +105,13 @@ class ZIEnv(gym.Env):
                                    If provided, each reset() randomly picks one
                                    strategy for all background agents, exposing
                                    the RL agent to diverse market conditions.
-                                   Example: [{'shade': [0,600], 'eta': 0.5},
-                                             {'shade': [380,420], 'eta': 1.0}]
-            warmup_fraction:       Fraction of sim_time to run background agents
-                                   before the RL agent acts (populates order book).
-                                   Set to 0.0 for sparse markets (lam << 0.1) to
-                                   avoid the RL agent's first arrival being pushed
-                                   beyond sim_time by repeated warm-up reschedules.
-                                   Default: 0.1.
         """
         super().__init__()
 
         if shade is None:
             shade = [250, 500]
         if shade_range is None:
-            shade_range = [10, 500]
+            shade_range = [0, 1000]
         if normalizers is None:
             normalizers = {"fundamental": 1e5, "invt": 10, "reward": 1e4, "pv": 5e5}
 
@@ -129,18 +128,21 @@ class ZIEnv(gym.Env):
         self.shade_range = shade_range
         self.normalizers = normalizers
         self.bg_strategies = bg_strategies
-        self.warmup_fraction = warmup_fraction
         self.time = 0
         self.last_value = 0.0
 
+        self.current_side = BUY  # side pre-assigned before each RL decision
+
         # ── Arrival buffers ──────────────────────────────────────────────
+        # All agents (BG + RL) share the same arrivals dict.
+        # BG agents are sampled at rate lam; RL agent at rate lam_zi.
         self.arrivals_sampled = 10000
 
         self.arrivals = defaultdict(list)
         self.arrival_times = sample_arrivals(lam, self.arrivals_sampled)
         self.arrival_index = 0
 
-        self.arrivals_zi = defaultdict(list)
+        # Separate inter-arrival buffer for the RL agent (may have different rate)
         self.arrival_times_zi = sample_arrivals(lam_zi, self.arrivals_sampled)
         self.arrival_index_zi = 0
 
@@ -165,15 +167,10 @@ class ZIEnv(gym.Env):
                 pv_var=pv_var,
             )
 
-        # ── RL agent ──────────────────────────────────────────────────────
+        # ── RL agent — joins the shared arrivals pool ─────────────────────
         self.zi_agent_id = num_background_agents
-        # Guarantee first RL arrival is within sim_time.
         first_zi = self.arrival_times_zi[self.arrival_index_zi].item()
-        while first_zi >= sim_time:
-            self.arrival_times_zi = sample_arrivals(lam_zi, self.arrivals_sampled)
-            self.arrival_index_zi = 0
-            first_zi = self.arrival_times_zi[self.arrival_index_zi].item()
-        self.arrivals_zi[first_zi].append(self.zi_agent_id)
+        self.arrivals[first_zi].append(self.zi_agent_id)
         self.arrival_index_zi += 1
         self.zi_agent = ZIAgent(
             agent_id=self.zi_agent_id,
@@ -185,18 +182,18 @@ class ZIEnv(gym.Env):
 
         # ── Gym spaces ────────────────────────────────────────────────────
         lower_bound = np.array(
-            [0, 0, 0, 0, -1, -1, -1, -1, 0, 0, 0, -1, -1], dtype=np.float64
+            [0, 0, 0, 0, -1, -1, -1, -1, 0, 0, 0, -1, -1, 0], dtype=np.float64
         )
         upper_bound = np.array(
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=np.float64
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=np.float64
         )
         self.observation_space = spaces.Box(
-            low=lower_bound, high=upper_bound, shape=(13,), dtype=np.float64
+            low=lower_bound, high=upper_bound, shape=(14,), dtype=np.float64
         )
         self.action_space = spaces.Box(
             low=0.0, high=1.0, shape=(2,), dtype=np.float32
         )
-        self.observation = np.zeros(13, dtype=np.float64)
+        self.observation = np.zeros(14, dtype=np.float64)
 
     # ── Gymnasium API ──────────────────────────────────────────────────────
 
@@ -204,7 +201,7 @@ class ZIEnv(gym.Env):
         super().reset(seed=seed)
         self.time = 0
         self.last_value = 0.0
-        self.observation = np.zeros(13, dtype=np.float64)
+        self.observation = np.zeros(14, dtype=np.float64)
 
         # New fundamental for each episode
         fundamental = LazyGaussianMeanReverting(
@@ -227,11 +224,8 @@ class ZIEnv(gym.Env):
             self.agents[agent_id].reset()
         self.zi_agent.reset()
 
-        # Resample arrival schedules
+        # Resample arrival schedules (RL agent goes into same pool — no warm-up)
         self.reset_arrivals()
-
-        # Warm-up: run background agents to populate the order book
-        self.run_agents_only()
 
         end = self.run_until_next_zi_arrival()
         if end:
@@ -263,56 +257,26 @@ class ZIEnv(gym.Env):
     # ── Arrival helpers ────────────────────────────────────────────────────
 
     def reset_arrivals(self):
+        """Resample all arrival schedules. RL agent joins the shared arrivals pool."""
         self.arrivals = defaultdict(list)
         self.arrivals_sampled = 10000
         self.arrival_times = sample_arrivals(self.lam, self.arrivals_sampled)
         self.arrival_index = 0
 
-        self.arrivals_zi = defaultdict(list)
         self.arrival_times_zi = sample_arrivals(self.lam_zi, self.arrivals_sampled)
         self.arrival_index_zi = 0
 
+        # Schedule background agents' first arrivals
         for agent_id in range(self.num_agents):
             self.arrivals[self.arrival_times[self.arrival_index].item()].append(
                 agent_id
             )
             self.arrival_index += 1
 
-        # Guarantee first RL arrival is within sim_time.
+        # Schedule RL agent's first arrival into the shared pool
         first_zi = self.arrival_times_zi[self.arrival_index_zi].item()
-        while first_zi >= self.sim_time:
-            self.arrival_times_zi = sample_arrivals(self.lam_zi, self.arrivals_sampled)
-            self.arrival_index_zi = 0
-            first_zi = self.arrival_times_zi[self.arrival_index_zi].item()
-        self.arrivals_zi[first_zi].append(self.zi_agent_id)
+        self.arrivals[first_zi].append(self.zi_agent_id)
         self.arrival_index_zi += 1
-
-    def run_agents_only(self):
-        """Warm-up: advance background agents for warmup_fraction of sim_time.
-
-        Any RL agent arrivals that fall inside the warm-up window are
-        skipped but immediately rescheduled for after the current time,
-        ensuring run_until_next_zi_arrival() always finds a future arrival.
-
-        Set warmup_fraction=0.0 for sparse markets (e.g. lam=0.005) to avoid
-        repeated reschedules pushing the RL agent's first arrival beyond sim_time.
-        """
-        for _ in range(int(self.warmup_fraction * self.sim_time)):
-            if self.arrivals[self.time]:
-                self.agents_step()
-                self.market_step(agent_only=True)
-            # If RL agent was scheduled during warm-up, reschedule it forward
-            if self.arrivals_zi[self.time]:
-                if self.arrival_index_zi == self.arrivals_sampled:
-                    self.arrival_times_zi = sample_arrivals(
-                        self.lam_zi, self.arrivals_sampled
-                    )
-                    self.arrival_index_zi = 0
-                self.arrivals_zi[
-                    self.arrival_times_zi[self.arrival_index_zi].item() + 1 + self.time
-                ].append(self.zi_agent_id)
-                self.arrival_index_zi += 1
-            self.time += 1
 
     def run_until_next_zi_arrival(self):
         """Advance market until the RL agent's next scheduled arrival.
@@ -321,7 +285,10 @@ class ZIEnv(gym.Env):
             True  if the episode ended (time >= sim_time) before RL agent arrived.
             False if RL agent arrived; also calls update_obs().
         """
-        while len(self.arrivals_zi[self.time]) == 0 and self.time < self.sim_time:
+        while (
+            self.zi_agent_id not in self.arrivals[self.time]
+            and self.time < self.sim_time
+        ):
             self.agents_step()
             self.market_step(agent_only=True)
             self.time += 1
@@ -329,13 +296,19 @@ class ZIEnv(gym.Env):
         if self.time >= self.sim_time:
             return True
         else:
+            # Pre-assign side for this RL decision; include in observation
+            self.current_side = random.choice([BUY, SELL])
             self.update_obs()
             return False
 
     # ── Per-step helpers ───────────────────────────────────────────────────
 
     def zi_agent_step(self, action):
-        """Translate gym action [shade_norm, eta] → limit order, submit to market."""
+        """Translate gym action [shade_norm, eta] → limit order, submit to market.
+
+        Uses self.current_side (pre-assigned in run_until_next_zi_arrival) so the
+        side included in the observation matches the side used for the order.
+        """
         d_min, d_max = self.shade_range
         shade_val = float(action[0]) * (d_max - d_min) + d_min
         eta = float(action[1])
@@ -344,7 +317,7 @@ class ZIEnv(gym.Env):
         self.market.withdraw_all(self.zi_agent_id)
 
         t = self.market.get_time()
-        side = random.choice([BUY, SELL])
+        side = self.current_side
         estimate = self.zi_agent.estimate_fundamental()
         pv_value = self.zi_agent.pv.value_for_exchange(self.zi_agent.position, side)
 
@@ -381,21 +354,26 @@ class ZIEnv(gym.Env):
             ]
         )
 
-        # Schedule next RL agent arrival
+        # Schedule next RL agent arrival into the shared arrivals pool
         if self.arrival_index_zi == self.arrivals_sampled:
             self.arrival_times_zi = sample_arrivals(
                 self.lam_zi, self.arrivals_sampled
             )
             self.arrival_index_zi = 0
-        self.arrivals_zi[
+        self.arrivals[
             self.arrival_times_zi[self.arrival_index_zi].item() + 1 + self.time
         ].append(self.zi_agent_id)
         self.arrival_index_zi += 1
 
     def agents_step(self):
-        """Let all background agents that arrive at self.time act."""
-        agents = self.arrivals[self.time]
-        if len(agents) == 0:
+        """Let all background agents that arrive at self.time act.
+
+        Skips the RL agent ID — the RL agent is handled by zi_agent_step().
+        """
+        agents = [
+            a for a in self.arrivals[self.time] if a != self.zi_agent_id
+        ]
+        if not agents:
             return
         self.market.event_queue.set_time(self.time)
         for agent_id in agents:
@@ -514,6 +492,7 @@ class ZIEnv(gym.Env):
             est_fund,
             pv_buy,
             pv_sell,
+            self.current_side,
         )
 
     def normalize(
@@ -531,6 +510,7 @@ class ZIEnv(gym.Env):
         est_fund,
         pv_buy,
         pv_sell,
+        side,
     ):
         N = self.normalizers
         pv_n = N.get("pv", 5e5)
@@ -545,6 +525,7 @@ class ZIEnv(gym.Env):
         est_n = est_fund / N["fundamental"]
         pv_buy_n = np.clip(pv_buy / pv_n, -1.0, 1.0)
         pv_sell_n = np.clip(pv_sell / pv_n, -1.0, 1.0)
+        side_n = 0.0 if side == BUY else 1.0
 
         obs = np.array(
             [
@@ -561,11 +542,12 @@ class ZIEnv(gym.Env):
                 est_n,
                 pv_buy_n,
                 pv_sell_n,
+                side_n,
             ],
             dtype=np.float64,
         )
         # Guard against NaN/inf from metrics when the order book has little history
-        # (sparse arrivals or early in an episode before the warm-up populates the book).
+        # (sparse arrivals or early in an episode before the book populates).
         # RSI defaults to 0.5 (neutral = 50/100); all other NaN features default to 0.
         if np.isnan(obs[9]):   # rsi_n
             obs[9] = 0.5

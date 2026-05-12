@@ -133,7 +133,6 @@ def _run_tronformer_cell(args):
         shade=[250, 500],
         normalizers=NORMALIZERS,
         bg_strategies=[{'shade': bg['shade'], 'eta': bg['eta']}],
-        warmup_fraction=0.0,
     )
     if shade_bins is not None:
         env_kwargs["shade_bins"] = shade_bins

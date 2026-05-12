@@ -3,17 +3,18 @@ MLPAgent — ZI-style trading agent whose shade/eta are chosen by an internal ML
 
 ZIMlpPolicy:
     Simple 3-hidden-layer MLP with Sigmoid output, constraining both actions
-    to [0, 1].  Input dim = 13 (normalized market + agent features).
+    to [0, 1].  Input dim = 14 (normalized market + agent features + side).
 
 MLPAgent:
     Inherits ZIAgent to reuse estimate_fundamental(), update_position(),
     get_pos_value(), reset(), and the PrivateValues object.
 
     Overrides take_action() to:
-        1. Build the same 13-feature observation as ZIEnv.update_obs().
-        2. Pass it through the internal MLP to get (shade_norm, eta).
-        3. Denormalize shade via shade_range.
-        4. Use the exact ZI pricing formula from zero_intelligence_agent.py.
+        1. Pre-sample side (BUY/SELL).
+        2. Build the same 14-feature observation as ZIEnv.update_obs().
+        3. Pass it through the internal MLP to get (shade_norm, eta).
+        4. Denormalize shade via shade_range.
+        5. Use the exact ZI pricing formula from zero_intelligence_agent.py.
 
     Can be plugged directly into a raw simulation as a drop-in for ZIAgent:
         sim.agents[agent_id] = MLPAgent(agent_id, market, ...)
@@ -32,6 +33,7 @@ MLPAgent:
         [10] est_fundamental
         [11] pv_buy
         [12] pv_sell
+        [13] side              0.0 = BUY, 1.0 = SELL
 """
 
 import math
@@ -57,21 +59,19 @@ from marketsim.wrappers.metrics import (
 class ZIMlpPolicy(nn.Module):
     """3-hidden-layer MLP for the ZI RL agent.
 
-    Input:  13 normalized market/agent features.
+    Input:  14 normalized market/agent features (13 market features + side).
     Output: 2 values in [0, 1] via Sigmoid — (shade_norm, eta).
     """
 
     def __init__(
-        self, input_dim: int = 13, hidden_dim: int = 64, output_dim: int = 2
+        self, input_dim: int = 14, hidden_dim: int = 64, output_dim: int = 2
     ):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, output_dim),
@@ -116,7 +116,7 @@ class MLPAgent(ZIAgent):
         if shade is None:
             shade = [250, 500]
         if shade_range is None:
-            shade_range = [10, 500]
+            shade_range = [0, 1000]
         if normalizers is None:
             normalizers = {"fundamental": 1e5, "invt": 10, "pv": 5e5}
 
@@ -133,7 +133,7 @@ class MLPAgent(ZIAgent):
         self.normalizers = normalizers
 
         self.policy = ZIMlpPolicy(
-            input_dim=13, hidden_dim=hidden_dim, output_dim=2
+            input_dim=14, hidden_dim=hidden_dim, output_dim=2
         )
         self.policy.eval()
 
@@ -144,8 +144,12 @@ class MLPAgent(ZIAgent):
 
     # ── Observation ───────────────────────────────────────────────────────
 
-    def build_obs(self) -> np.ndarray:
-        """Build the 13-feature observation identical to ZIEnv.update_obs().
+    def build_obs(self, side: int) -> np.ndarray:
+        """Build the 14-feature observation identical to ZIEnv.update_obs().
+
+        Args:
+            side: BUY (1) or SELL (-1) — the side pre-sampled for this action.
+                  Encoded as 0.0 for BUY, 1.0 for SELL (matching TRONAgent).
 
         Uses market.fundamental.final_time to derive sim_time so the agent
         is self-contained (no dependency on the ZIEnv object).
@@ -182,8 +186,9 @@ class MLPAgent(ZIAgent):
         est_n = est_fund / N["fundamental"]
         pv_buy_n = np.clip(pv_buy / pv_n, -1.0, 1.0)
         pv_sell_n = np.clip(pv_sell / pv_n, -1.0, 1.0)
+        side_n = 0.0 if side == BUY else 1.0
 
-        return np.array(
+        obs = np.array(
             [
                 time_left_n,
                 fund_n,
@@ -198,15 +203,25 @@ class MLPAgent(ZIAgent):
                 est_n,
                 pv_buy_n,
                 pv_sell_n,
+                side_n,
             ],
             dtype=np.float64,
         )
+        if np.isnan(obs[9]):   # rsi_n
+            obs[9] = 0.5
+        obs = np.nan_to_num(obs, nan=0.0, posinf=1.0, neginf=-1.0)
+        return obs
 
     # ── Action ────────────────────────────────────────────────────────────
 
     def take_action(self) -> List[Order]:
-        """Override ZIAgent.take_action(): use MLP to select shade and eta."""
-        obs = self.build_obs()
+        """Override ZIAgent.take_action(): use MLP to select shade and eta.
+
+        Side is pre-sampled before building the observation so that the agent
+        can condition shade/eta on which side it will be trading.
+        """
+        side = random.choice([BUY, SELL])
+        obs = self.build_obs(side)
         obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():
             action = self.policy(obs_tensor).squeeze(0).numpy()
@@ -217,7 +232,6 @@ class MLPAgent(ZIAgent):
         shade_val = shade_norm * (d_max - d_min) + d_min
 
         t = self.market.get_time()
-        side = random.choice([BUY, SELL])
         estimate = self.estimate_fundamental()
         pv_value = self.pv.value_for_exchange(self.position, side)
 
