@@ -46,3 +46,6 @@ wandb/
 
 # Training runs (model weights, checkpoints, logs)
 runs/
+
+# Claude Code local settings
+.claude/
