@@ -18,6 +18,7 @@ import numpy as np
 import torch
 import multiprocessing as mp
 from collections import Counter
+from pathlib import Path
 
 from marketsim.agent.tron_agent import TRONPolicy
 from marketsim.wrappers.tron_env import TRONEnv
@@ -374,6 +375,8 @@ def main():
                    help='Paths to multiple model checkpoints; evaluate as ensemble (avg Q-values)')
     p.add_argument('--ensemble-name', type=str, default='ensemble',
                    help='Label for the ensemble entry in the results table')
+    p.add_argument('--model-path', default=None,
+                   help='Path to a TRON .pt file to evaluate (bypasses MODELS dict)')
     args = p.parse_args()
 
     n_proc = args.processes or min(mp.cpu_count(), 12)
@@ -384,6 +387,11 @@ def main():
         k: v for k, v in MODELS.items()
         if (args.models is None or k in args.models) and os.path.exists(v)
     }
+
+    if args.model_path:
+        if args.models is None:
+            models = {}  # bypass MODELS dict when a specific path is given without --models filter
+        models[Path(args.model_path).stem] = args.model_path
 
     has_ensemble = bool(args.ensemble)
 
