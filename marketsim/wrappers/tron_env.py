@@ -143,6 +143,7 @@ class TRONEnv(gym.Env):
             self.ETA_BINS = np.asarray(eta_bins)
         self.time = 0
         self.last_value = 0.0
+        self.final_fundamental: float = 0.0  # realized F_T for this episode (paper §3.5)
         # Running total value of all bg agents at the last TRON step (for advantage reward)
         self.bg_last_total_value = 0.0
         self.current_side = BUY  # side assigned before each RL decision
@@ -251,6 +252,8 @@ class TRONEnv(gym.Env):
             r=self.r,
             shock_var=self.shock_var,
         )
+        fundamental.prefetch_all()
+        self.final_fundamental = fundamental.get_final_fundamental()
         self.market.reset(fundamental=fundamental)
 
         if self.bg_strategies is not None:
@@ -293,7 +296,8 @@ class TRONEnv(gym.Env):
 
         end = self.run_until_next_zi_arrival()
         if end:
-            return self.end_sim()
+            obs, end_r, term, trunc, info = self.end_sim()
+            return obs, reward + end_r, term, trunc, info
 
         return self.get_obs(), reward, False, False, {}
 
@@ -471,9 +475,12 @@ class TRONEnv(gym.Env):
                 self.agents[aid].update_position(qty, cash)
 
         if not agent_only:
-            est_fund = self._env_estimate_fundamental()
+            # Use the episode's realized final fundamental for mark-to-market (paper §3.5).
+            # This ensures intermediate rewards sum exactly to the liquidation return.
+            # The Bayesian estimate is kept only for the observation feature [10].
+            f = self.final_fundamental
             current_value = (
-                self.zi_agent.position * est_fund
+                self.zi_agent.position * f
                 + self.zi_agent.cash
                 + self.zi_agent.get_pos_value()
             )
@@ -481,10 +488,8 @@ class TRONEnv(gym.Env):
             self.last_value = current_value
 
             if self.paired_proxy:
-                # Paired baseline: proxy ZI S8 agent with same private value as TRON.
-                # Fundamental and order-flow noise cancel in the difference.
                 proxy_value = (
-                    self.proxy_agent.position * est_fund
+                    self.proxy_agent.position * f
                     + self.proxy_agent.cash
                     + self.proxy_agent.get_pos_value()
                 )
@@ -492,9 +497,8 @@ class TRONEnv(gym.Env):
                 self.proxy_last_value = proxy_value
                 reward = (tron_delta - proxy_delta) / self.normalizers["reward"]
             elif self.advantage_reward:
-                # Subtract mean bg-agent delta to reduce market-wide noise
                 bg_total = sum(
-                    ag.position * est_fund + ag.cash + ag.get_pos_value()
+                    ag.position * f + ag.cash + ag.get_pos_value()
                     for ag in self.agents.values()
                     if ag is not self.proxy_agent
                 )
@@ -509,9 +513,9 @@ class TRONEnv(gym.Env):
         return 0.0
 
     def end_sim(self):
-        final_fund = self.market.get_final_fundamental()
+        f = self.final_fundamental
         current_value = (
-            self.zi_agent.position * final_fund
+            self.zi_agent.position * f
             + self.zi_agent.cash
             + self.zi_agent.get_pos_value()
         )
@@ -519,7 +523,7 @@ class TRONEnv(gym.Env):
 
         if self.paired_proxy:
             proxy_value = (
-                self.proxy_agent.position * final_fund
+                self.proxy_agent.position * f
                 + self.proxy_agent.cash
                 + self.proxy_agent.get_pos_value()
             )
@@ -527,7 +531,7 @@ class TRONEnv(gym.Env):
             reward = (tron_delta - proxy_delta) / self.normalizers["reward"]
         elif self.advantage_reward:
             bg_total = sum(
-                ag.position * final_fund + ag.cash + ag.get_pos_value()
+                ag.position * f + ag.cash + ag.get_pos_value()
                 for ag in self.agents.values()
                 if ag is not self.proxy_agent
             )

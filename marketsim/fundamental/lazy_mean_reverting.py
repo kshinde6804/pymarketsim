@@ -74,6 +74,11 @@ class LazyGaussianMeanReverting(Fundamental):
         """
         return self.fundamental_values
 
+    def prefetch_all(self):
+        """Pre-generate t=latest_t+1 … final_time so every get_value_at(t) is a cache hit."""
+        for t in range(self.latest_t + 1, self.final_time + 1):
+            self._generate_at(t)
+
     def get_final_fundamental(self) -> float:
         """
         Get the fundamental value at the final time step.

@@ -130,6 +130,7 @@ class ZIEnv(gym.Env):
         self.bg_strategies = bg_strategies
         self.time = 0
         self.last_value = 0.0
+        self.final_fundamental: float = 0.0  # realized F_T for this episode (paper §3.5)
 
         self.current_side = BUY  # side pre-assigned before each RL decision
 
@@ -203,13 +204,15 @@ class ZIEnv(gym.Env):
         self.last_value = 0.0
         self.observation = np.zeros(14, dtype=np.float64)
 
-        # New fundamental for each episode
+        # New fundamental for each episode; pre-generate full path so F_T is known at reset.
         fundamental = LazyGaussianMeanReverting(
             mean=self.mean,
             final_time=self.sim_time + 1,
             r=self.r,
             shock_var=self.shock_var,
         )
+        fundamental.prefetch_all()
+        self.final_fundamental = fundamental.get_final_fundamental()
         self.market.reset(fundamental=fundamental)
 
         # If multi-strategy mode, pick a random background strategy for this episode
@@ -247,7 +250,8 @@ class ZIEnv(gym.Env):
 
         end = self.run_until_next_zi_arrival()
         if end:
-            return self.end_sim()
+            obs, end_r, term, trunc, info = self.end_sim()
+            return obs, reward + end_r, term, trunc, info
 
         return self.get_obs(), reward, False, False, {}
 
@@ -421,13 +425,10 @@ class ZIEnv(gym.Env):
                 self.agents[aid].update_position(qty, cash)
 
         if not agent_only:
-            # Mark-to-market using the Bayesian estimated fundamental.
-            # Computed using self.time (env clock) so the fundamental lookup
-            # stays strictly forward even after market.step() increments the
-            # internal event_queue clock to self.time+1.
-            est_fund = self._env_estimate_fundamental()
+            # Use the episode's realized final fundamental for mark-to-market (paper §3.5).
+            # This ensures intermediate rewards sum exactly to the liquidation return.
             current_value = (
-                self.zi_agent.position * est_fund
+                self.zi_agent.position * self.final_fundamental
                 + self.zi_agent.cash
                 + self.zi_agent.get_pos_value()
             )
@@ -438,9 +439,8 @@ class ZIEnv(gym.Env):
         return 0.0
 
     def end_sim(self):
-        final_fund = self.market.get_final_fundamental()
         current_value = (
-            self.zi_agent.position * final_fund
+            self.zi_agent.position * self.final_fundamental
             + self.zi_agent.cash
             + self.zi_agent.get_pos_value()
         )
