@@ -35,3 +35,26 @@ Training TRON (R2D2) for 3,000,000 steps
   step= 750,000  eval=-0.388±8.020  roll=-0.239  eps=0.288  loss=0.8569  175.7min
   step= 800,000  eval=-0.558±8.211  roll=-0.390  eps=0.240  loss=0.9201  187.4min
   step= 850,000  eval=-0.216±9.161  roll=-0.387  eps=0.193  loss=0.9216  199.0min
+  step= 900,000  eval=-0.439±9.484  roll=-0.404  eps=0.145  loss=0.9483  211.2min
+  step= 950,000  eval=+0.105±8.248  roll=-0.183  eps=0.098  loss=0.9101  223.5min
+  step=1,000,000  eval=-0.653±8.848  roll=-0.329  eps=0.050  loss=0.9566  235.6min
+  step=1,050,000  eval=-0.436±8.086  roll=-0.328  eps=0.050  loss=0.9145  247.2min
+  step=1,100,000  eval=-0.422±9.580  roll=-0.504  eps=0.050  loss=0.8991  260.0min
+  step=1,150,000  eval=-0.872±8.300  roll=-0.577  eps=0.050  loss=0.9255  271.4min
+  step=1,200,000  eval=-0.655±9.145  roll=-0.650  eps=0.050  loss=0.9914  283.2min
+  step=1,250,000  eval=-0.280±8.137  roll=-0.602  eps=0.050  loss=1.0883  295.4min
+  step=1,300,000  eval=-0.180±7.895  roll=-0.372  eps=0.050  loss=1.0623  307.5min
+  Saved model → runs/tron_envc_nb24_s8_v4_ab/best_model.pt
+  step=1,350,000  eval=+0.053±8.982  roll=-0.136  eps=0.050  loss=1.1246  319.7min  *saved*
+  step=1,400,000  eval=-0.725±8.765  roll=-0.284  eps=0.050  loss=1.1873  331.2min
+  step=1,450,000  eval=-0.231±7.971  roll=-0.301  eps=0.050  loss=1.1810  343.2min
+  step=1,500,000  eval=-0.353±9.002  roll=-0.436  eps=0.050  loss=1.2030  355.2min
+  step=1,550,000  eval=-0.491±8.481  roll=-0.358  eps=0.050  loss=1.2458  367.3min
+  step=1,600,000  eval=-0.330±8.459  roll=-0.391  eps=0.050  loss=1.2461  380.3min
+  step=1,650,000  eval=-0.050±8.397  roll=-0.291  eps=0.050  loss=1.2766  392.6min
+  step=1,700,000  eval=-0.238±8.828  roll=-0.206  eps=0.050  loss=1.2634  404.6min
+  step=1,750,000  eval=-0.264±8.890  roll=-0.184  eps=0.050  loss=1.2899  416.8min
+  step=1,800,000  eval=-0.040±8.997  roll=-0.181  eps=0.050  loss=1.2733  429.4min
+  step=1,850,000  eval=-0.526±8.720  roll=-0.277  eps=0.050  loss=1.3192  441.5min
+  step=1,900,000  eval=-0.357±8.190  roll=-0.308  eps=0.050  loss=1.3652  453.6min
+  step=1,950,000  eval=-0.396±8.382  roll=-0.426  eps=0.050  loss=1.3050  465.5min
