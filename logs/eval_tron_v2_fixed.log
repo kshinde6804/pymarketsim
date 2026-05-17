@@ -1,0 +1,20 @@
+Evaluating v2_fixed vs ZI S8 baseline in Env C
+  lam=0.012, pv_var=2.00e+07, pv_norm=4.47e+03, n_bg=24
+  2000 episodes  |  12 processes
+
+Computing ZI S8 baseline...
+  ZI S8 baseline: +891.2 +/- 336.6
+
+Evaluating v2_fixed...
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+=================================================================
+Model                    TRON profit  ZI S8 baseline   Advantage  NE broken?
+-----------------------------------------------------------------
+v2_fixed                 +1038.9 +/-307.4      +891.2 +/-336.6      +147.7          no
+=================================================================
+
+NE broken if advantage > 2x SE of TRON profit (threshold: 614.8)

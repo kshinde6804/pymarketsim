@@ -1,0 +1,23 @@
+Evaluating 1 TRON model(s) + ZI S8 baseline vs 24 S8 agents in Env C
+  lam=0.012, pv_var=2.00e+07, n_bg=24, sim_time=2000
+  2000 episodes per model  |  12 processes
+
+Computing ZI S8 baseline...
+  ZI S8 baseline: +896.3 ± 336.1
+
+Evaluating 42bin_burnin4 ...
+Traceback (most recent call last):
+  File "/home/kshinde/ondemand/pymarketsim/eval_tron_vs_s8_envc.py", line 232, in <module>
+    main()
+  File "/home/kshinde/ondemand/pymarketsim/eval_tron_vs_s8_envc.py", line 210, in main
+    _, ep_profits = _tron_worker((model_name, weights_path, num_runs))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/eval_tron_vs_s8_envc.py", line 141, in _tron_worker
+    policy = _load_policy(weights_path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/eval_tron_vs_s8_envc.py", line 47, in _load_policy
+    policy.load_state_dict(ckpt)
+  File "/home/kshinde/ondemand/pymarketsim/venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 2635, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for TRONPolicy:
+	Missing key(s) in state_dict: "lstm_norm.weight", "lstm_norm.bias". 

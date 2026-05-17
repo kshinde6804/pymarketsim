@@ -1,0 +1,85 @@
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_v2
+Device: cuda
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+Training TRON (R2D2) for 3,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=5
+  hidden_dim=256, shade_bins=s8-skewed (n=42)
+  eps_decay_steps=1000000, entropy_coef=0.01, train_freq=4
+  eval_episodes=1000, eval_window=3, reward=advantage
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07, pv_n=4.47e+03
+
+  Saved model → runs/tron_envc_nb24_s8_v2/best_model.pt
+  step=  50,000  eval=-0.415±14.004  roll=-0.415  eps=0.953  loss=2.5728  7.9min  *saved*
+  step= 100,000  eval=-0.501±15.381  roll=-0.458  eps=0.905  loss=3.0200  15.8min
+  Saved model → runs/tron_envc_nb24_s8_v2/best_model.pt
+  step= 150,000  eval=-0.020±14.100  roll=-0.312  eps=0.858  loss=2.9652  23.7min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v2/best_model.pt
+  step= 200,000  eval=+0.054±13.331  roll=-0.155  eps=0.810  loss=2.9353  31.7min  *saved*
+  step= 250,000  eval=-0.646±14.284  roll=-0.204  eps=0.762  loss=2.9672  39.7min
+  step= 300,000  eval=-0.154±14.278  roll=-0.248  eps=0.715  loss=3.0579  47.8min
+  step= 350,000  eval=-0.379±14.006  roll=-0.393  eps=0.667  loss=2.9823  55.8min
+  step= 400,000  eval=-1.292±12.831  roll=-0.608  eps=0.620  loss=3.1471  63.7min
+  step= 450,000  eval=+0.518±14.287  roll=-0.384  eps=0.573  loss=3.0063  71.9min
+  step= 500,000  eval=-0.475±14.680  roll=-0.416  eps=0.525  loss=3.2420  80.0min
+  step= 550,000  eval=-1.173±13.879  roll=-0.377  eps=0.478  loss=3.1439  88.3min
+  step= 600,000  eval=-0.496±14.005  roll=-0.715  eps=0.430  loss=3.1702  96.4min
+  step= 650,000  eval=-1.570±15.146  roll=-1.080  eps=0.383  loss=3.2468  104.5min
+  step= 700,000  eval=-0.776±13.588  roll=-0.947  eps=0.335  loss=3.2763  112.7min
+  step= 750,000  eval=-0.639±14.661  roll=-0.995  eps=0.288  loss=3.2691  120.9min
+  step= 800,000  eval=-0.583±13.996  roll=-0.666  eps=0.240  loss=3.2303  128.9min
+  step= 850,000  eval=-0.905±13.651  roll=-0.709  eps=0.193  loss=3.3249  136.9min
+  step= 900,000  eval=-0.058±14.995  roll=-0.516  eps=0.145  loss=3.2859  145.0min
+  step= 950,000  eval=-0.269±14.229  roll=-0.411  eps=0.098  loss=3.2962  153.0min
+  Saved model → runs/tron_envc_nb24_s8_v2/best_model.pt
+  step=1,000,000  eval=+0.451±14.859  roll=+0.041  eps=0.050  loss=3.3128  161.1min  *saved*
+  step=1,050,000  eval=-0.777±14.435  roll=-0.198  eps=0.050  loss=3.3498  169.4min
+  step=1,100,000  eval=-0.309±14.784  roll=-0.211  eps=0.050  loss=3.3523  177.5min
+  step=1,150,000  eval=-0.425±12.960  roll=-0.503  eps=0.050  loss=3.3034  185.7min
+  step=1,200,000  eval=+0.258±14.505  roll=-0.159  eps=0.050  loss=3.4060  193.7min
+  step=1,250,000  eval=-0.526±14.127  roll=-0.231  eps=0.050  loss=3.4859  201.8min
+  step=1,300,000  eval=-0.181±15.027  roll=-0.150  eps=0.050  loss=3.4892  209.9min
+  step=1,350,000  eval=-0.152±14.702  roll=-0.286  eps=0.050  loss=3.4064  217.8min
+  step=1,400,000  eval=+0.063±15.636  roll=-0.090  eps=0.050  loss=3.4201  226.0min
+  step=1,450,000  eval=-0.485±14.565  roll=-0.191  eps=0.050  loss=3.4605  234.4min
+  step=1,500,000  eval=+0.220±14.550  roll=-0.067  eps=0.050  loss=3.5555  242.6min
+  step=1,550,000  eval=-0.691±14.594  roll=-0.319  eps=0.050  loss=3.4588  250.8min
+  step=1,600,000  eval=+0.296±15.781  roll=-0.058  eps=0.050  loss=3.5442  258.9min
+  step=1,650,000  eval=-0.425±14.460  roll=-0.273  eps=0.050  loss=3.4275  267.0min
+  step=1,700,000  eval=-0.367±14.613  roll=-0.165  eps=0.050  loss=3.4900  274.9min
+  step=1,750,000  eval=-0.399±14.540  roll=-0.397  eps=0.050  loss=3.4227  283.0min
+  step=1,800,000  eval=-0.393±14.369  roll=-0.386  eps=0.050  loss=3.4114  291.0min
+  step=1,850,000  eval=-0.534±14.675  roll=-0.442  eps=0.050  loss=3.4054  299.0min
+  step=1,900,000  eval=-0.793±14.578  roll=-0.573  eps=0.050  loss=3.3433  307.3min
+  step=1,950,000  eval=-0.123±15.403  roll=-0.483  eps=0.050  loss=3.4008  315.4min
+  step=2,000,000  eval=+0.127±14.261  roll=-0.263  eps=0.050  loss=3.3805  323.5min
+  step=2,050,000  eval=-0.969±14.357  roll=-0.322  eps=0.050  loss=3.3807  331.6min
+  step=2,100,000  eval=-1.362±14.635  roll=-0.735  eps=0.050  loss=3.3755  339.8min
+  step=2,150,000  eval=-0.867±14.558  roll=-1.066  eps=0.050  loss=3.3989  347.8min
+  step=2,200,000  eval=-0.248±14.601  roll=-0.825  eps=0.050  loss=3.3805  356.1min
+  step=2,250,000  eval=+0.221±15.248  roll=-0.298  eps=0.050  loss=3.3698  364.5min
+  step=2,300,000  eval=-0.380±14.023  roll=-0.135  eps=0.050  loss=3.4387  373.0min
+  step=2,350,000  eval=-0.436±13.326  roll=-0.198  eps=0.050  loss=3.3521  381.5min
+  step=2,400,000  eval=-1.076±15.423  roll=-0.630  eps=0.050  loss=3.4502  389.8min
+  step=2,450,000  eval=-0.833±13.944  roll=-0.782  eps=0.050  loss=3.2636  397.9min
+  step=2,500,000  eval=-0.564±13.673  roll=-0.824  eps=0.050  loss=3.3185  406.2min
+  step=2,550,000  eval=-0.752±13.326  roll=-0.716  eps=0.050  loss=3.2769  414.3min
+  step=2,600,000  eval=-0.355±14.248  roll=-0.557  eps=0.050  loss=3.3359  422.5min
+  step=2,650,000  eval=-1.379±13.107  roll=-0.829  eps=0.050  loss=3.2516  430.7min
+  step=2,700,000  eval=-0.547±13.347  roll=-0.760  eps=0.050  loss=3.2640  438.7min
+  step=2,750,000  eval=-0.675±13.291  roll=-0.867  eps=0.050  loss=3.2936  447.0min
+  step=2,800,000  eval=-0.100±14.295  roll=-0.441  eps=0.050  loss=3.3187  455.0min
+  step=2,850,000  eval=-1.356±14.167  roll=-0.711  eps=0.050  loss=3.2888  463.3min
+  step=2,900,000  eval=-0.249±13.801  roll=-0.568  eps=0.050  loss=3.3190  471.5min
+  step=2,950,000  eval=-0.670±14.778  roll=-0.758  eps=0.050  loss=3.2587  480.0min
+  step=3,000,000  eval=-0.154±14.579  roll=-0.357  eps=0.050  loss=3.2123  488.4min
+  Saved model → runs/tron_envc_nb24_s8_v2/final_model.pt
+
+Training complete. Best rolling eval: +0.0412
+All outputs in: runs/tron_envc_nb24_s8_v2/
+  Saved: runs/tron_envc_nb24_s8_v2/learning_curve.png

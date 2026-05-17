@@ -1,0 +1,91 @@
+[Wed May 13 00:31:37 EDT 2026] Waiting for burnin=4 (PID 2203084) and burnin=0 wrapper (PID 2204634) to finish...
+[Wed May 13 09:06:38 EDT 2026] Both previous jobs done. Starting s8-bins run...
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_42bins
+Device: cuda
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+Training TRON (R2D2) for 3,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=5
+  hidden_dim=128, shade_bins=s8-skewed (n=42)
+  eps_decay_steps=1000000, train_freq=4
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07
+
+  step=  50,000  eval=+0.283±14.202  eps=0.953  loss=3.1327  6.4min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 100,000  eval=+0.725±14.929  eps=0.905  loss=3.0481  13.3min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 150,000  eval=+0.728±13.869  eps=0.858  loss=3.0357  19.9min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 200,000  eval=+0.676±14.942  eps=0.810  loss=3.2791  26.6min
+  step= 250,000  eval=+0.409±15.068  eps=0.762  loss=3.2780  33.2min
+  step= 300,000  eval=+1.453±13.016  eps=0.715  loss=3.2996  39.9min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 350,000  eval=+0.524±13.737  eps=0.667  loss=3.3946  46.6min
+  step= 400,000  eval=+1.761±16.351  eps=0.620  loss=3.3738  53.3min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 450,000  eval=+1.483±13.216  eps=0.573  loss=3.3518  60.0min
+  step= 500,000  eval=-0.224±13.575  eps=0.525  loss=3.4271  66.7min
+  step= 550,000  eval=+1.810±14.302  eps=0.478  loss=3.3624  73.4min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step= 600,000  eval=+1.721±14.753  eps=0.430  loss=3.3794  80.3min
+  step= 650,000  eval=+0.287±13.682  eps=0.383  loss=3.4744  87.0min
+  step= 700,000  eval=+0.384±14.941  eps=0.335  loss=3.4135  93.8min
+  step= 750,000  eval=+1.243±14.701  eps=0.288  loss=3.3708  100.6min
+  step= 800,000  eval=+1.530±13.486  eps=0.240  loss=3.4249  107.5min
+  step= 850,000  eval=+0.607±14.270  eps=0.193  loss=3.3605  114.3min
+  step= 900,000  eval=-0.120±13.863  eps=0.145  loss=3.2691  121.3min
+  step= 950,000  eval=+0.341±13.149  eps=0.098  loss=3.3704  128.2min
+  step=1,000,000  eval=+0.912±14.227  eps=0.050  loss=3.3247  135.0min
+  step=1,050,000  eval=+0.902±13.182  eps=0.050  loss=3.3293  142.1min
+  step=1,100,000  eval=+0.283±12.521  eps=0.050  loss=3.2469  148.8min
+  step=1,150,000  eval=+0.955±13.953  eps=0.050  loss=3.3091  155.7min
+  step=1,200,000  eval=+1.987±14.014  eps=0.050  loss=3.3558  162.6min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step=1,250,000  eval=+0.502±14.076  eps=0.050  loss=3.2166  169.3min
+  step=1,300,000  eval=+1.987±12.474  eps=0.050  loss=3.2622  176.3min
+  step=1,350,000  eval=+0.793±13.018  eps=0.050  loss=3.2475  183.4min
+  step=1,400,000  eval=+1.298±14.183  eps=0.050  loss=3.2494  190.2min
+  step=1,450,000  eval=+0.560±13.568  eps=0.050  loss=3.3762  197.0min
+  step=1,500,000  eval=+0.778±12.573  eps=0.050  loss=3.2965  203.8min
+  step=1,550,000  eval=-0.160±14.083  eps=0.050  loss=3.2119  210.6min
+  step=1,600,000  eval=-0.232±14.562  eps=0.050  loss=3.1991  217.5min
+  step=1,650,000  eval=+1.911±13.454  eps=0.050  loss=3.2536  224.4min
+  step=1,700,000  eval=+1.347±16.458  eps=0.050  loss=3.4047  231.1min
+  step=1,750,000  eval=+1.299±12.654  eps=0.050  loss=3.1893  238.0min
+  step=1,800,000  eval=+0.842±15.806  eps=0.050  loss=3.3444  244.9min
+  step=1,850,000  eval=+0.666±13.412  eps=0.050  loss=3.2975  251.9min
+  step=1,900,000  eval=+1.130±15.039  eps=0.050  loss=3.2394  258.9min
+  step=1,950,000  eval=+1.176±12.975  eps=0.050  loss=3.2698  265.9min
+  step=2,000,000  eval=+1.406±14.299  eps=0.050  loss=3.2957  272.7min
+  step=2,050,000  eval=+0.595±16.288  eps=0.050  loss=3.1803  279.6min
+  step=2,100,000  eval=+1.541±12.474  eps=0.050  loss=3.2444  286.6min
+  step=2,150,000  eval=-0.025±13.509  eps=0.050  loss=3.2651  294.0min
+  step=2,200,000  eval=+1.980±13.670  eps=0.050  loss=3.1705  300.8min
+  step=2,250,000  eval=+0.472±15.050  eps=0.050  loss=3.2491  307.8min
+  step=2,300,000  eval=+0.962±14.613  eps=0.050  loss=3.3063  316.1min
+  step=2,350,000  eval=+1.177±15.473  eps=0.050  loss=3.2585  322.8min
+  step=2,400,000  eval=+1.081±11.905  eps=0.050  loss=3.2840  330.4min
+  step=2,450,000  eval=+1.582±12.836  eps=0.050  loss=3.2135  337.7min
+  step=2,500,000  eval=+1.385±14.731  eps=0.050  loss=3.2059  345.8min
+  step=2,550,000  eval=-0.067±14.036  eps=0.050  loss=3.3610  352.7min
+  step=2,600,000  eval=+0.114±13.666  eps=0.050  loss=3.2822  359.5min
+  step=2,650,000  eval=+0.965±13.814  eps=0.050  loss=3.2789  366.2min
+  step=2,700,000  eval=+2.188±14.667  eps=0.050  loss=3.1703  373.2min
+  Saved model → runs/tron_envc_nb24_s8_42bins/best_model.pt
+  step=2,750,000  eval=+0.236±14.309  eps=0.050  loss=3.2272  379.9min
+  step=2,800,000  eval=+0.994±13.182  eps=0.050  loss=3.3359  387.3min
+  step=2,850,000  eval=+0.380±12.918  eps=0.050  loss=3.2438  394.5min
+  step=2,900,000  eval=+0.882±13.117  eps=0.050  loss=3.2680  401.5min
+  step=2,950,000  eval=+0.641±15.854  eps=0.050  loss=3.2578  408.1min
+  step=3,000,000  eval=+0.180±13.042  eps=0.050  loss=3.1971  416.7min
+  Saved model → runs/tron_envc_nb24_s8_42bins/final_model.pt
+
+Training complete. Best eval: +2.1884
+All outputs in: runs/tron_envc_nb24_s8_42bins/
+  Saved: runs/tron_envc_nb24_s8_42bins/learning_curve.png
+[Wed May 13 16:03:29 EDT 2026] s8-bins training complete.

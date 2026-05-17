@@ -67,22 +67,28 @@ class TRONPolicy(nn.Module):
     def __init__(
         self,
         input_dim: int = 14,
-        hidden_dim: int = 128,
+        hidden_dim: int = 256,
         n_shade_bins: int = 21,
         n_eta_bins: int = 21,
         shade_bins: Optional[np.ndarray] = None,
+        eta_bins: Optional[np.ndarray] = None,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
         if shade_bins is not None:
             self.SHADE_BINS = np.asarray(shade_bins)
             n_shade_bins = len(self.SHADE_BINS)
+        if eta_bins is not None:
+            self.ETA_BINS = np.asarray(eta_bins)
+            n_eta_bins = len(self.ETA_BINS)
 
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
         )
         self.lstm = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
+        # LayerNorm stabilises LSTM output magnitude and gradient flow
+        self.lstm_norm = nn.LayerNorm(hidden_dim)
 
         # Value head: separate V scalar per action head (paper Figure 3)
         self.value_head = nn.Sequential(
@@ -132,8 +138,9 @@ class TRONPolicy(nn.Module):
         enc = self.encoder(x.reshape(batch * seq_len, -1))
         enc = enc.reshape(batch, seq_len, -1)
 
-        # LSTM
+        # LSTM → LayerNorm
         lstm_out, (h, c) = self.lstm(enc, h_c)  # (batch, seq_len, hidden_dim)
+        lstm_out = self.lstm_norm(lstm_out)
 
         # Dueling: separate V per head (paper Figure 3)
         V = self.value_head(lstm_out)  # (batch, seq_len, 2)
@@ -179,8 +186,9 @@ class TRONAgent(ZIAgent):
         shade=None,
         normalizers=None,
         weights_path: Optional[str] = None,
-        hidden_dim: int = 128,
+        hidden_dim: int = 256,
         shade_bins: Optional[np.ndarray] = None,
+        eta_bins: Optional[np.ndarray] = None,
     ):
         if shade is None:
             shade = [250, 500]
@@ -197,7 +205,7 @@ class TRONAgent(ZIAgent):
 
         self.normalizers = normalizers
 
-        self.policy = TRONPolicy(input_dim=14, hidden_dim=hidden_dim, shade_bins=shade_bins)
+        self.policy = TRONPolicy(input_dim=14, hidden_dim=hidden_dim, shade_bins=shade_bins, eta_bins=eta_bins)
         self.policy.eval()
 
         if weights_path is not None:

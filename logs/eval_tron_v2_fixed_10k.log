@@ -1,0 +1,21 @@
+Evaluating 1 TRON model(s) + ZI S8 baseline vs 24 S8 agents in Env C
+  lam=0.012, pv_var=2.00e+07, n_bg=24, sim_time=2000
+  10000 episodes per model  |  12 processes
+
+Computing ZI S8 baseline...
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  ZI S8 baseline: +857.1 ± 154.7
+
+Evaluating v2_fixed ...
+  v2_fixed: profit=+906.4 ± 142.7  advantage=+49.3
+
+======================================================================
+Model                      TRON profit  ZI S8 baseline   Advantage  NE broken?
+----------------------------------------------------------------------
+v2_fixed                    +906.4 ±142.7      +857.1 ±154.7       +49.3          no
+======================================================================
+
+NE broken if TRON advantage > 2× std-error of TRON profit.

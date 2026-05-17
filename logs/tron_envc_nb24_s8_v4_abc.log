@@ -1,0 +1,42 @@
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_v4_abc
+Device: cuda
+
+Training TRON (R2D2) for 3,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=15
+  hidden_dim=256, shade_bins=s8-skewed (n=42), eta_bins=fixed=0.5 (n=1)
+  tau=0.005 (Polyak), lr=0.0001 decay×0.3 at env steps [1000000, 3000000]
+  eps_decay_steps=1000000, entropy_coef=0.05, train_freq=4
+  eval_episodes=1000, eval_window=3, reward=paired-proxy, rew_norm=std-norm(w=10k), clip=±1.0
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07, pv_n=4.47e+03
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step=  50,000  eval=-0.572±9.531  roll=-0.572  eps=0.953  loss=-0.0661  11.2min  *saved*
+  step= 100,000  eval=-0.642±9.877  roll=-0.607  eps=0.905  loss=-0.0726  22.3min
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 150,000  eval=-0.325±9.760  roll=-0.513  eps=0.858  loss=-0.0709  33.5min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 200,000  eval=-0.539±8.738  roll=-0.502  eps=0.810  loss=-0.0769  44.6min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 250,000  eval=-0.578±7.966  roll=-0.481  eps=0.762  loss=-0.0733  55.6min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 300,000  eval=+0.069±8.947  roll=-0.350  eps=0.715  loss=-0.0755  66.6min  *saved*
+  step= 350,000  eval=-0.681±8.697  roll=-0.397  eps=0.667  loss=-0.0697  77.6min
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 400,000  eval=-0.206±8.348  roll=-0.273  eps=0.620  loss=-0.0720  89.1min  *saved*
+  step= 450,000  eval=-0.313±8.867  roll=-0.400  eps=0.573  loss=-0.0669  101.1min
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 500,000  eval=-0.114±7.861  roll=-0.211  eps=0.525  loss=-0.0639  112.6min  *saved*
+  step= 550,000  eval=-0.493±8.934  roll=-0.306  eps=0.478  loss=-0.0686  125.3min
+  step= 600,000  eval=-0.217±8.575  roll=-0.275  eps=0.430  loss=-0.0664  136.9min
+  step= 650,000  eval=-0.031±8.304  roll=-0.247  eps=0.383  loss=-0.0648  148.3min
+  Saved model → runs/tron_envc_nb24_s8_v4_abc/best_model.pt
+  step= 700,000  eval=-0.185±7.843  roll=-0.145  eps=0.335  loss=-0.0624  159.9min  *saved*
+  step= 750,000  eval=-0.291±7.722  roll=-0.169  eps=0.288  loss=-0.0681  171.2min
+  step= 800,000  eval=-0.520±8.003  roll=-0.332  eps=0.240  loss=-0.0590  183.8min
+  step= 850,000  eval=-0.094±8.547  roll=-0.302  eps=0.193  loss=-0.0586  195.0min

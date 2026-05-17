@@ -92,6 +92,9 @@ class TRONEnv(gym.Env):
         normalizers=None,
         bg_strategies=None,
         shade_bins=None,
+        eta_bins=None,
+        advantage_reward: bool = False,
+        paired_proxy: bool = False,
     ):
         """
         Args:
@@ -109,6 +112,9 @@ class TRONEnv(gym.Env):
                                    "reward", "pv" for observation/reward scaling.
             bg_strategies:         Optional list of dicts with 'shade' and 'eta'.
                                    Each reset() picks one randomly for all BG agents.
+            paired_proxy:          If True, add a ZI S8 proxy agent with TRON's shared
+                                   private value. Reward = (TRON_delta - proxy_delta),
+                                   replacing the mean-bg baseline. Reduces pv noise.
         """
         super().__init__()
 
@@ -129,11 +135,23 @@ class TRONEnv(gym.Env):
         self.shade = shade
         self.normalizers = normalizers
         self.bg_strategies = bg_strategies
+        self.advantage_reward = advantage_reward
+        self.paired_proxy = paired_proxy
         if shade_bins is not None:
             self.SHADE_BINS = np.asarray(shade_bins)
+        if eta_bins is not None:
+            self.ETA_BINS = np.asarray(eta_bins)
         self.time = 0
         self.last_value = 0.0
+        # Running total value of all bg agents at the last TRON step (for advantage reward)
+        self.bg_last_total_value = 0.0
         self.current_side = BUY  # side assigned before each RL decision
+        # Paired proxy state (Option A)
+        self.proxy_agent = None
+        self.proxy_agent_id = None
+        self.proxy_last_value = 0.0
+        self.arrival_times_proxy = None
+        self.arrival_index_proxy = 0
 
         # ── Arrival buffers ───────────────────────────────────────────────
         # All agents (BG + RL) share the same arrivals dict.
@@ -182,6 +200,25 @@ class TRONEnv(gym.Env):
             pv_var=pv_var,
         )
 
+        # ── Paired proxy agent (Option A) ─────────────────────────────────
+        if paired_proxy:
+            self.proxy_agent_id = num_background_agents + 1  # one beyond TRON
+            self.proxy_agent = ZIAgent(
+                agent_id=self.proxy_agent_id,
+                market=self.market,
+                q_max=q_max,
+                shade=[460, 540],   # S8 strategy
+                pv_var=pv_var,
+                eta=0.5,
+            )
+            self.arrival_times_proxy = sample_arrivals(lam_zi, self.arrivals_sampled)
+            self.arrival_index_proxy = 0
+            first_proxy = self.arrival_times_proxy[self.arrival_index_proxy].item()
+            self.arrivals[first_proxy].append(self.proxy_agent_id)
+            self.arrival_index_proxy += 1
+            # Add to agents dict so agents_step() picks it up automatically
+            self.agents[self.proxy_agent_id] = self.proxy_agent
+
         # ── Gym spaces ────────────────────────────────────────────────────
         # 14-dim: 13 ZIEnv features + side indicator in [0,1]
         lower_bound = np.array(
@@ -193,7 +230,6 @@ class TRONEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=lower_bound, high=upper_bound, shape=(14,), dtype=np.float64
         )
-        # MultiDiscrete: sizes derived from TRONPolicy bin arrays
         self.action_space = spaces.MultiDiscrete(
             [len(self.SHADE_BINS), len(self.ETA_BINS)]
         )
@@ -205,6 +241,8 @@ class TRONEnv(gym.Env):
         super().reset(seed=seed)
         self.time = 0
         self.last_value = 0.0
+        self.bg_last_total_value = 0.0
+        self.proxy_last_value = 0.0
         self.observation = np.zeros(14, dtype=np.float64)
 
         fundamental = LazyGaussianMeanReverting(
@@ -218,12 +256,19 @@ class TRONEnv(gym.Env):
         if self.bg_strategies is not None:
             chosen = random.choice(self.bg_strategies)
             for agent_id in self.agents:
+                # Don't override proxy's fixed S8 strategy
+                if agent_id == self.proxy_agent_id:
+                    continue
                 self.agents[agent_id].shade = chosen['shade']
                 self.agents[agent_id].eta = chosen.get('eta', 1.0)
 
         for agent_id in self.agents:
             self.agents[agent_id].reset()
         self.zi_agent.reset()
+
+        if self.paired_proxy:
+            # Share TRON's private value so pv noise cancels in the reward difference
+            self.proxy_agent.pv = self.zi_agent.pv
 
         # Resample arrival schedules (RL agent goes into same pool — no warm-up)
         self.reset_arrivals()
@@ -278,6 +323,14 @@ class TRONEnv(gym.Env):
         first_zi = self.arrival_times_zi[self.arrival_index_zi].item()
         self.arrivals[first_zi].append(self.zi_agent_id)
         self.arrival_index_zi += 1
+
+        # Schedule proxy agent's first arrival (same rate as TRON)
+        if self.paired_proxy:
+            self.arrival_times_proxy = sample_arrivals(self.lam_zi, self.arrivals_sampled)
+            self.arrival_index_proxy = 0
+            first_proxy = self.arrival_times_proxy[self.arrival_index_proxy].item()
+            self.arrivals[first_proxy].append(self.proxy_agent_id)
+            self.arrival_index_proxy += 1
 
     def run_until_next_zi_arrival(self):
         """Advance market until the RL agent's next scheduled arrival.
@@ -380,13 +433,23 @@ class TRONEnv(gym.Env):
             orders = agent.take_action()
             self.market.add_orders(orders)
 
-            if self.arrival_index == self.arrivals_sampled:
-                self.arrival_times = sample_arrivals(self.lam, self.arrivals_sampled)
-                self.arrival_index = 0
-            self.arrivals[
-                self.arrival_times[self.arrival_index].item() + 1 + self.time
-            ].append(agent_id)
-            self.arrival_index += 1
+            # Proxy reschedules at lam_zi rate; bg agents reschedule at lam rate
+            if self.paired_proxy and agent_id == self.proxy_agent_id:
+                if self.arrival_index_proxy == self.arrivals_sampled:
+                    self.arrival_times_proxy = sample_arrivals(self.lam_zi, self.arrivals_sampled)
+                    self.arrival_index_proxy = 0
+                self.arrivals[
+                    self.arrival_times_proxy[self.arrival_index_proxy].item() + 1 + self.time
+                ].append(agent_id)
+                self.arrival_index_proxy += 1
+            else:
+                if self.arrival_index == self.arrivals_sampled:
+                    self.arrival_times = sample_arrivals(self.lam, self.arrivals_sampled)
+                    self.arrival_index = 0
+                self.arrivals[
+                    self.arrival_times[self.arrival_index].item() + 1 + self.time
+                ].append(agent_id)
+                self.arrival_index += 1
 
     def market_step(self, agent_only=True):
         """Clear market, update positions, optionally compute reward."""
@@ -402,6 +465,8 @@ class TRONEnv(gym.Env):
             )
             if aid == self.zi_agent_id:
                 self.zi_agent.update_position(qty, cash)
+            elif self.paired_proxy and aid == self.proxy_agent_id:
+                self.proxy_agent.update_position(qty, cash)
             else:
                 self.agents[aid].update_position(qty, cash)
 
@@ -412,8 +477,33 @@ class TRONEnv(gym.Env):
                 + self.zi_agent.cash
                 + self.zi_agent.get_pos_value()
             )
-            reward = (current_value - self.last_value) / self.normalizers["reward"]
+            tron_delta = current_value - self.last_value
             self.last_value = current_value
+
+            if self.paired_proxy:
+                # Paired baseline: proxy ZI S8 agent with same private value as TRON.
+                # Fundamental and order-flow noise cancel in the difference.
+                proxy_value = (
+                    self.proxy_agent.position * est_fund
+                    + self.proxy_agent.cash
+                    + self.proxy_agent.get_pos_value()
+                )
+                proxy_delta = proxy_value - self.proxy_last_value
+                self.proxy_last_value = proxy_value
+                reward = (tron_delta - proxy_delta) / self.normalizers["reward"]
+            elif self.advantage_reward:
+                # Subtract mean bg-agent delta to reduce market-wide noise
+                bg_total = sum(
+                    ag.position * est_fund + ag.cash + ag.get_pos_value()
+                    for ag in self.agents.values()
+                    if ag is not self.proxy_agent
+                )
+                n_bg = len(self.agents) - (1 if self.paired_proxy else 0)
+                mean_bg_delta = (bg_total - self.bg_last_total_value) / max(1, n_bg)
+                self.bg_last_total_value = bg_total
+                reward = (tron_delta - mean_bg_delta) / self.normalizers["reward"]
+            else:
+                reward = tron_delta / self.normalizers["reward"]
             return reward
 
         return 0.0
@@ -425,7 +515,27 @@ class TRONEnv(gym.Env):
             + self.zi_agent.cash
             + self.zi_agent.get_pos_value()
         )
-        reward = (current_value - self.last_value) / self.normalizers["reward"]
+        tron_delta = current_value - self.last_value
+
+        if self.paired_proxy:
+            proxy_value = (
+                self.proxy_agent.position * final_fund
+                + self.proxy_agent.cash
+                + self.proxy_agent.get_pos_value()
+            )
+            proxy_delta = proxy_value - self.proxy_last_value
+            reward = (tron_delta - proxy_delta) / self.normalizers["reward"]
+        elif self.advantage_reward:
+            bg_total = sum(
+                ag.position * final_fund + ag.cash + ag.get_pos_value()
+                for ag in self.agents.values()
+                if ag is not self.proxy_agent
+            )
+            n_bg = len(self.agents) - (1 if self.paired_proxy else 0)
+            mean_bg_delta = (bg_total - self.bg_last_total_value) / max(1, n_bg)
+            reward = (tron_delta - mean_bg_delta) / self.normalizers["reward"]
+        else:
+            reward = tron_delta / self.normalizers["reward"]
         return self.get_obs(), reward, True, False, {}
 
     # ── Observation ────────────────────────────────────────────────────────

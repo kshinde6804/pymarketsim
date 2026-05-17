@@ -118,7 +118,7 @@ All agents extend `Agent` (ABC) and implement `take_action() → List[Order]`.
 
 - **ZIAgent** (`marketsim/agent/zero_intelligence_agent.py`) — base agent: shade (valuation offset) + eta (liquidity-taking threshold); `estimate_fundamental()` computes Bayesian posterior; `update_position(q, p)` settles executions
 - **MLPAgent** (`marketsim/agent/mlp_agent.py`) — inherits ZIAgent; `ZIMlpPolicy` is a 3-layer ReLU MLP (hidden=64) with Sigmoid output producing `[shade_norm, eta]`; `build_obs()` → 13-dim; uses `market.end_time` for correct `time_left` in Simulator context
-- **TRONAgent** (`marketsim/agent/tron_agent.py`) — inherits ZIAgent; `TRONPolicy` is Dueling DQN + LSTM (hidden=128); discrete actions: 42 shade bins × 2 eta bins; `build_obs(side)` → 14-dim (13 + side indicator); LSTM state `self.h_c` stored per-episode and zeroed in `reset()`
+- **TRONAgent** (`marketsim/agent/tron_agent.py`) — inherits ZIAgent; `TRONPolicy` is Dueling DQN + LSTM (hidden=128); discrete actions: 21 shade bins × 21 eta bins; `build_obs(side)` → 14-dim (13 + side indicator); LSTM state `self.h_c` stored per-episode and zeroed in `reset()`
 
 ### Fundamentals
 
@@ -155,14 +155,14 @@ All agents extend `Agent` (ABC) and implement `take_action() → List[Order]`.
 
 **Observation space:** 14-dim `Box` — same 13 ZIEnv features + side indicator `[13]` (0.0=BUY, 1.0=SELL).
 
-**Action space:** `MultiDiscrete([42, 2])` — shade_idx and eta_idx.
+**Action space:** `MultiDiscrete([21, 21])` — shade_idx and eta_idx.
 
 **Side pre-assignment:** at each RL arrival, `run_until_next_zi_arrival()` samples `self.current_side = random.choice([BUY, SELL])` before calling `update_obs()`, so the obs includes the side before the agent decides.
 
 **Discrete bins** (class-level constants on `TRONPolicy`, referenced by both `TRONEnv` and `TRONAgent`):
 ```python
-SHADE_BINS = np.linspace(0, 600, 42)
-ETA_BINS   = [0.0, 1.0]
+SHADE_BINS = np.linspace(0, 600, 21)   # 21 uniformly spaced values
+ETA_BINS   = np.linspace(0, 1, 21)     # 21 values in [0, 1]
 ```
 
 ### TRONPolicy Architecture
@@ -171,11 +171,11 @@ ETA_BINS   = [0.0, 1.0]
 Input: 14-dim
   → Linear(14→128) → ReLU            [shared encoder]
   → LSTM(128, 128, batch_first=True)  [stateful per episode]
-  → Linear(128→1)                     [V(s) value head]
-  → Adv shade: Linear(128→128)→ReLU→Linear(128→42)
-  → Adv eta:   Linear(128→128)→ReLU→Linear(128→2)
-Q_shade = V + A_shade − mean(A_shade)
-Q_eta   = V + A_eta   − mean(A_eta)
+  → Value head: Linear(128→128)→ReLU→Linear(128→2)  [separate V per head]
+  → Adv shade:  Linear(128→128)→ReLU→Linear(128→21)
+  → Adv eta:    Linear(128→128)→ReLU→Linear(128→21)
+Q_shade = V[...,0:1] + A_shade − mean(A_shade)
+Q_eta   = V[...,1:2] + A_eta   − mean(A_eta)
 ```
 
 ### Equilibrium Experiment

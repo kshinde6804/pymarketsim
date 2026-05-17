@@ -1,0 +1,27 @@
+Evaluating TRON model(s) vs ZI S8 baseline in Env C
+  lam=0.012, pv_var=2.00e+07, n_bg=24
+  2000 episodes per model  |  12 processes
+  mode: paired
+
+Evaluating v3 ...
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+  Action distribution (200 episodes, 4752 steps):
+  Shade bins (top-10 by frequency):
+    [ 3] shade= 120.0    639 ( 13.4%)  ████
+    [31] shade= 535.0    289 (  6.1%)  █
+    [19] shade= 475.0    267 (  5.6%)  █
+    [24] shade= 500.0    207 (  4.4%)  █
+    [11] shade= 410.0    200 (  4.2%)  █
+    [ 0] shade=   0.0    193 (  4.1%)  █
+    [21] shade= 485.0    187 (  3.9%)  █
+    [13] shade= 430.0    150 (  3.2%)  
+    [40] shade= 593.3    148 (  3.1%)  
+    [ 8] shade= 320.0    129 (  2.7%)  
+  Eta bins:
+    [ 0] eta=0.500   4752 (100.0%)  ██████████████████████████████
+
+  No action collapse detected (top shade bin: 13.4%)

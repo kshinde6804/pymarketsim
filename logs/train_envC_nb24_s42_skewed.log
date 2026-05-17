@@ -1,0 +1,47 @@
+
+Run directory: runs/tronformer_envC_nb24_s42_skewed
+Device: cuda
+/home/kshinde/ondemand/pymarketsim/train_tronformer.py:371: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+/home/kshinde/ondemand/pymarketsim/train_tronformer.py:377: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.rm_scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
+
+Training TRONformer (last-pos causal DQN) for 1,000,000 steps
+  seq_len=40, burnin=0, n_step=5, batch=64
+  d_model=128, n_layers=2, shade_bins=42
+  exploration=eps-greedy(eps_end=0.05)
+  eps_decay_steps=1000000, train_freq=4
+  buffer_capacity=50000 sequences (2,000,000 transitions)
+  env sim_time=2000, lam=0.012, lam_zi=0.012
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  step=  50,000  eval=+0.832±2.718  eps=0.953  loss=0.1049  6.8min
+  Saved model → runs/tronformer_envC_nb24_s42_skewed/best_model.pt
+  step= 100,000  eval=+0.611±2.232  eps=0.905  loss=0.1413  13.8min
+  step= 150,000  eval=+0.695±2.112  eps=0.858  loss=0.1565  20.8min
+  step= 200,000  eval=+0.739±2.289  eps=0.810  loss=0.1923  27.7min
+  step= 250,000  eval=+1.242±3.123  eps=0.762  loss=0.1989  34.5min
+  Saved model → runs/tronformer_envC_nb24_s42_skewed/best_model.pt
+  step= 300,000  eval=+0.850±2.476  eps=0.715  loss=0.2370  41.2min
+  step= 350,000  eval=+0.823±2.177  eps=0.667  loss=0.2349  48.2min
+  step= 400,000  eval=+0.633±1.859  eps=0.620  loss=0.2547  55.1min
+  step= 450,000  eval=+1.202±2.623  eps=0.573  loss=0.2548  62.1min
+  step= 500,000  eval=+0.945±2.107  eps=0.525  loss=0.2746  69.1min
+  step= 550,000  eval=+0.881±2.441  eps=0.478  loss=0.2724  76.1min
+  step= 600,000  eval=+0.648±1.772  eps=0.430  loss=0.2932  83.2min
+  step= 650,000  eval=+0.940±3.161  eps=0.383  loss=0.2974  90.2min
+  step= 700,000  eval=+0.651±2.449  eps=0.335  loss=0.3052  97.3min
+  step= 750,000  eval=+0.721±2.077  eps=0.288  loss=0.3038  104.3min
+  step= 800,000  eval=+0.627±2.074  eps=0.240  loss=0.3014  111.4min
+  step= 850,000  eval=+0.997±2.796  eps=0.193  loss=0.3151  118.6min
+  step= 900,000  eval=+0.810±3.112  eps=0.145  loss=0.3373  125.6min
+  step= 950,000  eval=+0.950±2.507  eps=0.098  loss=0.3199  132.7min
+  step=1,000,000  eval=+1.212±3.047  eps=0.050  loss=0.3481  139.9min
+  Saved model → runs/tronformer_envC_nb24_s42_skewed/final_model.pt
+
+Training complete. Best eval: +1.2421
+All outputs in: runs/tronformer_envC_nb24_s42_skewed/
+  Saved: runs/tronformer_envC_nb24_s42_skewed/learning_curve.png

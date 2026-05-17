@@ -34,8 +34,9 @@ import csv
 import os
 import random
 import time
+from collections import deque
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Sequence
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -43,8 +44,35 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 from marketsim.agent.tron_agent import TRONPolicy
 from marketsim.wrappers.tron_env import TRONEnv
+
+
+# ── Running reward normalizer (Option B) ──────────────────────────────────────
+
+class RunningRewardNormalizer:
+    """Normalizes rewards by a running estimate of their std.
+
+    Divides only by std (not mean), preserving the advantage signal's sign/magnitude.
+    Uses a fixed-size deque window over recent rewards seen during training.
+    Applied only to buffer entries — eval rewards are never normalized.
+    """
+
+    def __init__(self, window: int = 10_000):
+        self._buf: deque = deque(maxlen=window)
+
+    def normalize(self, reward: float) -> float:
+        self._buf.append(reward)
+        if len(self._buf) < 2:
+            return reward
+        std = float(np.std(self._buf))
+        return reward / max(std, 1e-8)
+
+# ── Fixed-eta bin (used when --fix-eta is set) ────────────────────────────────
+
+FIXED_ETA_BINS = np.array([0.5])   # single bin; agent always trades with eta=0.5
 
 # ── Shade bin options ──────────────────────────────────────────────────────────
 
@@ -55,6 +83,18 @@ UNIFORM_SHADE_BINS = np.linspace(0, 600, 21)
 SKEWED_SHADE_BINS = np.concatenate([
     np.linspace(0, 300, 7)[:-1],   # 0, 50, 100, ..., 250  (6 bins)
     np.linspace(300, 600, 16),     # 300, 320, ..., 600    (16 bins)
+])
+
+# S8-skewed: 42 bins with dense resolution around S8's shade range [460, 540]
+#   10 coarse in [0, 360]  (40-unit spacing)
+#    6 medium in [400, 450] (10-unit spacing)
+#   16 fine   in [460, 535]  (5-unit spacing) ← dense around S8
+#   10 medium in [540, 600]
+S8_SKEWED_SHADE_BINS = np.concatenate([
+    np.linspace(0, 400, 11)[:-1],    # [0, 40, 80, ..., 360]        10 bins
+    np.linspace(400, 460, 7)[:-1],   # [400, 410, 420, 430, 440, 450] 6 bins
+    np.linspace(460, 540, 17)[:-1],  # [460, 465, 470, ..., 535]    16 bins
+    np.linspace(540, 600, 10),       # [540, ~547, ..., 600]         10 bins
 ])
 
 # ── ENV hyper-parameters (match equilibrium experiment) ───────────────────────
@@ -96,16 +136,14 @@ ENV_KWARGS = dict(
 
 # ── R2D2 hyper-parameters ─────────────────────────────────────────────────────
 
-SEQ_LEN = 32          # ~10 steps/episode at lam_zi=0.005; 32 contains full episodes (99.9th pctile ~22)
-BURNIN = 0            # h0=0 is always fresh (episode start) so no stale state to warm up from;
-                      # burnin=0 lets gradients flow through all real steps, including early ones
-                      # that are relevant to test-time performance.
-N_STEP = 5            # n-step return horizon
+SEQ_LEN = 32          # ~24 steps/episode at lam_zi=0.012; 32 covers full episodes
+BURNIN = 0            # h0=0 is always fresh (episode start); gradients flow through all real steps
+N_STEP = 15           # n-step return horizon; covers ~60% of a 24-step episode for richer credit
 GAMMA = 0.99          # Discount factor
 BATCH_SIZE = 64       # Sequences sampled per gradient update
-BUFFER_CAPACITY = 50_000  # Buffer sized for shorter ~10-step episodes
+BUFFER_CAPACITY = 50_000  # Buffer sized for ~24-step episodes
 LR = 1e-4
-TARGET_UPDATE_FREQ = 1000  # Hard-copy online → target every N gradient steps
+TAU = 0.005           # Polyak soft target update coefficient (replaces hard copy every N steps)
 EPS_START = 1.0
 EPS_END = 0.05
 EPS_DECAY_STEPS = 1_000_000
@@ -113,7 +151,8 @@ GRAD_CLIP = 10.0
 LEARNING_STARTS = 100    # Sequences collected before first gradient step
 TRAIN_FREQ = 4           # Gradient update every N env steps
 EVAL_FREQ = 50_000       # Evaluate every N environment steps
-EVAL_EPISODES = 500
+EVAL_EPISODES = 1000     # larger window reduces checkpoint-selection bias
+EVAL_WINDOW = 3          # rolling average over this many consecutive evals for checkpoint selection
 
 
 # ── Replay Buffer ─────────────────────────────────────────────────────────────
@@ -301,8 +340,8 @@ def compute_nstep_returns(rews: torch.Tensor, dones: torch.Tensor, gamma: float,
     not_done = (~dones).float()  # (B, T)
 
     for t in range(T):
-        g = torch.zeros(B)
-        discount = torch.ones(B)   # per-sample discount (zeroed after done)
+        g = torch.zeros(B, device=rews.device)
+        discount = torch.ones(B, device=rews.device)   # per-sample discount (zeroed after done)
         for k in range(n):
             idx = t + k
             if idx >= T:
@@ -337,38 +376,51 @@ class R2D2Trainer:
     def __init__(
         self,
         obs_dim: int = 14,
-        hidden_dim: int = 128,
+        hidden_dim: int = 256,
         lr: float = LR,
         gamma: float = GAMMA,
         n_step: int = N_STEP,
         seq_len: int = SEQ_LEN,
         burnin: int = BURNIN,
         batch_size: int = BATCH_SIZE,
-        target_update_freq: int = TARGET_UPDATE_FREQ,
+        tau: float = TAU,
         eps_start: float = EPS_START,
         eps_end: float = EPS_END,
         eps_decay_steps: int = EPS_DECAY_STEPS,
         grad_clip: float = GRAD_CLIP,
         shade_bins: Optional[np.ndarray] = None,
+        eta_bins: Optional[np.ndarray] = None,
+        device: Optional[torch.device] = None,
+        entropy_coef: float = 0.0,
+        lr_milestones: Optional[List[int]] = None,
+        lr_gamma: float = 0.3,
     ):
         self.gamma = gamma
         self.n_step = n_step
         self.seq_len = seq_len
         self.burnin = burnin
         self.batch_size = batch_size
-        self.target_update_freq = target_update_freq
+        self.tau = tau
         self.eps_start = eps_start
         self.eps_end = eps_end
         self.eps_decay_steps = eps_decay_steps
         self.grad_clip = grad_clip
+        self.entropy_coef = entropy_coef
+        self.device = device or DEVICE
 
-        self.online = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins)
-        self.target = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins)
+        self.online = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins, eta_bins=eta_bins).to(self.device)
+        self.target = TRONPolicy(input_dim=obs_dim, hidden_dim=hidden_dim, shade_bins=shade_bins, eta_bins=eta_bins).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
 
         self.optimizer = optim.Adam(self.online.parameters(), lr=lr)
+        # LR schedule: step decay at specified gradient-step milestones
+        milestones = lr_milestones if lr_milestones else []
+        self.scheduler = optim.lr_scheduler.MultiStepLR(
+            self.optimizer, milestones=milestones, gamma=lr_gamma
+        )
         self.loss_fn = nn.SmoothL1Loss()
+        self.scaler = torch.amp.GradScaler("cuda", enabled=(self.device.type == "cuda"))
 
         self._grad_steps = 0
         self._env_steps = 0
@@ -393,7 +445,8 @@ class R2D2Trainer:
             action: [shade_idx, eta_idx]
             new h_c
         """
-        obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # (1, D)
+        obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1, D)
+        h_c = (h_c[0].to(self.device), h_c[1].to(self.device))
         with torch.no_grad():
             Q_shade, Q_eta, new_h_c = self.online(obs_t, h_c)
 
@@ -422,6 +475,12 @@ class R2D2Trainer:
         # rews:  (B, T)
         # dones: (B, T)
         # h0/c0: (1, B, H)
+        obs   = obs.to(self.device)
+        acts  = acts.to(self.device)
+        rews  = rews.to(self.device)
+        dones = dones.to(self.device)
+        h0    = h0.to(self.device)
+        c0    = c0.to(self.device)
 
         B, T, D = obs.shape
         learn_len = T - self.burnin  # steps for which we compute loss
@@ -437,9 +496,12 @@ class R2D2Trainer:
 
         # ── Online Q-values for learning steps ────────────────────────────
         self.online.train()
-        Q_shade_online, Q_eta_online, _ = self.online(
-            obs[:, self.burnin:, :], (h_burn, c_burn)
-        )
+        with torch.autocast(device_type=self.device.type, enabled=(self.device.type == "cuda")):
+            Q_shade_online, Q_eta_online, _ = self.online(
+                obs[:, self.burnin:, :], (h_burn, c_burn)
+            )
+        Q_shade_online = Q_shade_online.float()
+        Q_eta_online   = Q_eta_online.float()
         # Q_shade_online: (B, learn_len, n_shade)
         # Q_eta_online:   (B, learn_len, n_eta)
 
@@ -519,17 +581,31 @@ class R2D2Trainer:
         # ── Loss ──────────────────────────────────────────────────────────
         loss_shade = self.loss_fn(Q_shade_taken, shade_target.detach())
         loss_eta   = self.loss_fn(Q_eta_taken,   eta_target.detach())
-        loss = loss_shade + loss_eta
+
+        # Entropy bonus — prevents action-space collapse (Fix G)
+        if self.entropy_coef > 0.0:
+            shade_log_probs = torch.log_softmax(Q_shade_online.detach(), dim=-1)
+            eta_log_probs   = torch.log_softmax(Q_eta_online.detach(), dim=-1)
+            ent_shade = -(torch.exp(shade_log_probs) * shade_log_probs).sum(-1).mean()
+            ent_eta   = -(torch.exp(eta_log_probs)   * eta_log_probs).sum(-1).mean()
+            loss = loss_shade + loss_eta - self.entropy_coef * (ent_shade + ent_eta)
+        else:
+            loss = loss_shade + loss_eta
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
         nn.utils.clip_grad_norm_(self.online.parameters(), self.grad_clip)
-        self.optimizer.step()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        self.scheduler.step()
+
+        # Polyak soft target update: θ_target ← (1-τ)·θ_target + τ·θ_online
+        with torch.no_grad():
+            for p_on, p_tgt in zip(self.online.parameters(), self.target.parameters()):
+                p_tgt.data.mul_(1.0 - self.tau).add_(self.tau * p_on.data)
 
         self._grad_steps += 1
-        if self._grad_steps % self.target_update_freq == 0:
-            self.target.load_state_dict(self.online.state_dict())
-
         self.online.eval()
         return float(loss.item())
 
@@ -547,25 +623,31 @@ class R2D2Trainer:
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 
-def evaluate(policy: TRONPolicy, n_episodes: int = EVAL_EPISODES) -> Tuple[float, float]:
+def evaluate(
+    policy: TRONPolicy,
+    n_episodes: int = EVAL_EPISODES,
+    device: Optional[torch.device] = None,
+) -> Tuple[float, float]:
     """Roll out the greedy policy deterministically.
 
     Returns:
         (mean_reward, std_reward) over n_episodes episodes.
     """
+    device = device or DEVICE
+    policy = policy.to(device)
     policy.eval()
     env = TRONEnv(**ENV_KWARGS)
-    rewards = []
+    rewards: list = []
 
     for _ in range(n_episodes):
         obs, _ = env.reset()
-        h = torch.zeros(1, 1, policy.hidden_dim)
-        c = torch.zeros(1, 1, policy.hidden_dim)
+        h = torch.zeros(1, 1, policy.hidden_dim, device=device)
+        c = torch.zeros(1, 1, policy.hidden_dim, device=device)
         ep_reward = 0.0
         done = False
 
         while not done:
-            obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+            obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
             with torch.no_grad():
                 Q_shade, Q_eta, (h, c) = policy(obs_t, (h, c))
             shade_idx = int(Q_shade.argmax(dim=-1).item())
@@ -621,18 +703,23 @@ def plot_learning_curve(run_dir: str, total_timesteps: int):
 
 # ── Main training loop ────────────────────────────────────────────────────────
 
-def train(args):
+def train(args, device: torch.device):
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join("runs", f"tron_{tag}")
     os.makedirs(run_dir, exist_ok=True)
     print(f"\nRun directory: {run_dir}")
+    print(f"Device: {device}")
 
     seq_len   = args.seq_len
     burnin    = args.burnin
     batch_sz  = args.batch_size
 
     shade_bins = ENV_KWARGS.get('shade_bins', UNIFORM_SHADE_BINS)
+    eta_bins   = ENV_KWARGS.get('eta_bins', None)
     hidden_dim = args.hidden_dim
+
+    # Convert env-step LR milestones → gradient-step milestones
+    lr_milestones_grad = [m // TRAIN_FREQ for m in args.lr_milestones] if args.lr_milestones else []
 
     trainer = R2D2Trainer(
         obs_dim=14,
@@ -641,7 +728,14 @@ def train(args):
         burnin=burnin,
         batch_size=batch_sz,
         shade_bins=shade_bins,
+        eta_bins=eta_bins,
         eps_decay_steps=args.eps_decay_steps,
+        entropy_coef=args.entropy_coef,
+        tau=args.tau,
+        lr_milestones=lr_milestones_grad,
+        lr_gamma=args.lr_gamma,
+        n_step=args.n_step,
+        device=device,
     )
     buffer  = SequenceReplayBuffer(seq_len=seq_len, hidden_dim=hidden_dim)
     collector = SequenceCollector(seq_len=seq_len, hidden_dim=hidden_dim)
@@ -652,12 +746,14 @@ def train(args):
 
     eval_csv = os.path.join(run_dir, "eval_rewards.csv")
     best_model_path = os.path.join(run_dir, "best_model.pt")
-    best_mean = -np.inf
+    # Fix A: rolling average checkpoint selection (EVAL_WINDOW evals) reduces single-eval noise
+    eval_window: deque = deque(maxlen=EVAL_WINDOW)
+    best_rolling = -np.inf
 
     env = TRONEnv(**ENV_KWARGS)
     obs, _ = env.reset()
-    h = torch.zeros(1, 1, hidden_dim)
-    c = torch.zeros(1, 1, hidden_dim)
+    h = torch.zeros(1, 1, hidden_dim, device=device)
+    c = torch.zeros(1, 1, hidden_dim, device=device)
     collector.start_sequence(h, c)
 
     ep_reward = 0.0
@@ -668,13 +764,33 @@ def train(args):
     next_eval = ((args.start_step // EVAL_FREQ) + 1) * EVAL_FREQ
     losses = []
 
-    bins_desc = "skewed" if np.array_equal(shade_bins, SKEWED_SHADE_BINS) else "uniform"
+    reward_normalizer = RunningRewardNormalizer() if args.reward_std_norm else None
+
+    if np.array_equal(shade_bins, SKEWED_SHADE_BINS):
+        bins_desc = "skewed"
+    elif np.array_equal(shade_bins, S8_SKEWED_SHADE_BINS):
+        bins_desc = "s8-skewed"
+    else:
+        bins_desc = "uniform"
+    if ENV_KWARGS.get('paired_proxy'):
+        adv_str = "paired-proxy"
+    elif ENV_KWARGS.get('advantage_reward'):
+        adv_str = "advantage"
+    else:
+        adv_str = "absolute"
+    eta_desc = f"fixed=0.5 (n=1)" if eta_bins is not None and len(eta_bins) == 1 else f"learned (n={len(trainer.online.ETA_BINS)})"
+    lr_str = f"decay×{args.lr_gamma} at env steps {args.lr_milestones}" if args.lr_milestones else "constant"
     print(f"\nTraining TRON (R2D2) for {total_steps:,} steps")
-    print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={N_STEP}")
-    print(f"  hidden_dim={hidden_dim}, shade_bins={bins_desc} (n={len(shade_bins)})")
-    print(f"  eps_decay_steps={args.eps_decay_steps}, train_freq={TRAIN_FREQ}")
+    print(f"  seq_len={seq_len}, burnin={burnin}, batch={batch_sz}, n_step={args.n_step}")
+    print(f"  hidden_dim={hidden_dim}, shade_bins={bins_desc} (n={len(shade_bins)}), eta_bins={eta_desc}")
+    print(f"  tau={args.tau} (Polyak), lr={LR} {lr_str}")
+    norm_str = f"std-norm(w=10k)" if args.reward_std_norm else "none"
+    clip_str = f"clip=±{args.clip_reward}" if args.clip_reward is not None else "no-clip"
+    print(f"  eps_decay_steps={args.eps_decay_steps}, entropy_coef={args.entropy_coef}, train_freq={TRAIN_FREQ}")
+    print(f"  eval_episodes={EVAL_EPISODES}, eval_window={EVAL_WINDOW}, reward={adv_str}, rew_norm={norm_str}, {clip_str}")
+    pv_n = ENV_KWARGS['normalizers'].get('pv', 5e5)
     print(f"  env sim_time={ENV_KWARGS['sim_time']}, lam={ENV_KWARGS['lam']}, lam_zi={ENV_KWARGS['lam_zi']}, "
-          f"shock_var={ENV_KWARGS['shock_var']:.2e}, pv_var={ENV_KWARGS['pv_var']:.2e}\n")
+          f"shock_var={ENV_KWARGS['shock_var']:.2e}, pv_var={ENV_KWARGS['pv_var']:.2e}, pv_n={pv_n:.2e}\n")
 
     t0 = time.time()
 
@@ -682,6 +798,13 @@ def train(args):
         action, (h, c) = trainer.select_action(obs, (h, c))
         next_obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
+
+        # Option B: normalize reward by running std before storing in buffer
+        if reward_normalizer is not None:
+            reward = reward_normalizer.normalize(reward)
+        # Option C: clip normalized reward to reduce outlier influence
+        if args.clip_reward is not None:
+            reward = float(np.clip(reward, -args.clip_reward, args.clip_reward))
 
         collector.add(obs, action, reward, done)
         ep_reward += reward
@@ -706,8 +829,8 @@ def train(args):
             if seq is not None:
                 buffer.add(*seq)
             obs, _ = env.reset()
-            h = torch.zeros(1, 1, hidden_dim)
-            c = torch.zeros(1, 1, hidden_dim)
+            h = torch.zeros(1, 1, hidden_dim, device=device)
+            c = torch.zeros(1, 1, hidden_dim, device=device)
             collector.start_sequence(h, c)
 
         # Learn every TRAIN_FREQ steps once buffer has enough sequences.
@@ -718,20 +841,25 @@ def train(args):
 
         # Evaluate
         if step >= next_eval:
-            mean_r, std_r = evaluate(trainer.online)
+            mean_r, std_r = evaluate(trainer.online, device=device)
             elapsed = (time.time() - t0) / 60
+            # Fix A: rolling window checkpoint selection
+            eval_window.append(mean_r)
+            rolling = float(np.mean(eval_window))
+            saved = ""
+            if rolling > best_rolling:
+                best_rolling = rolling
+                trainer.save(best_model_path)
+                saved = "  *saved*"
             print(
                 f"  step={step:>8,}  eval={mean_r:+.3f}±{std_r:.3f}"
+                f"  roll={rolling:+.3f}"
                 f"  eps={trainer.epsilon:.3f}"
                 f"  loss={np.mean(losses[-100:]) if losses else 0:.4f}"
-                f"  {elapsed:.1f}min"
+                f"  {elapsed:.1f}min{saved}"
             )
             with open(eval_csv, "a", newline="") as f:
-                csv.writer(f).writerow([step, f"{mean_r:.4f}", f"{std_r:.4f}"])
-
-            if mean_r > best_mean:
-                best_mean = mean_r
-                trainer.save(best_model_path)
+                csv.writer(f).writerow([step, f"{mean_r:.4f}", f"{std_r:.4f}", f"{rolling:.4f}"])
 
             next_eval += EVAL_FREQ
 
@@ -739,7 +867,7 @@ def train(args):
     final_path = os.path.join(run_dir, "final_model.pt")
     trainer.save(final_path)
 
-    print(f"\nTraining complete. Best eval: {best_mean:+.4f}")
+    print(f"\nTraining complete. Best rolling eval: {best_rolling:+.4f}")
     print(f"All outputs in: {run_dir}/")
 
     plot_learning_curve(run_dir, total_steps)
@@ -747,16 +875,17 @@ def train(args):
 
 # ── Eval-only mode ────────────────────────────────────────────────────────────
 
-def eval_only(args):
+def eval_only(args, device: torch.device):
     assert args.load, "--eval-only requires --load <path>"
     shade_bins = ENV_KWARGS.get('shade_bins', UNIFORM_SHADE_BINS)
+    eta_bins   = ENV_KWARGS.get('eta_bins', None)
     print(f"Loading {args.load}")
-    policy = TRONPolicy(input_dim=14, hidden_dim=args.hidden_dim, shade_bins=shade_bins)
-    policy.load_state_dict(torch.load(args.load, map_location="cpu"))
+    policy = TRONPolicy(input_dim=14, hidden_dim=args.hidden_dim, shade_bins=shade_bins, eta_bins=eta_bins)
+    policy.load_state_dict(torch.load(args.load, map_location=device))
     policy.eval()
 
     n = args.eval_episodes
-    mean_r, std_r = evaluate(policy, n_episodes=n)
+    mean_r, std_r = evaluate(policy, n_episodes=n, device=device)
     print(f"Eval ({n} episodes): mean={mean_r:+.4f}  std={std_r:.4f}")
 
 
@@ -792,8 +921,10 @@ def parse_args():
                    help="Override private value variance in ENV_KWARGS")
     p.add_argument("--skew-bins", action="store_true",
                    help="Use skewed shade bins: 10 coarse in [0,300), 32 fine in [300,600]")
-    p.add_argument("--hidden-dim", type=int, default=128,
-                   help="LSTM hidden dimension (default 128)")
+    p.add_argument("--s8-bins", action="store_true",
+                   help="Use 42-bin shade bins dense around S8 [460,540] (5-unit spacing there)")
+    p.add_argument("--hidden-dim", type=int, default=256,
+                   help="LSTM hidden dimension (default 256)")
     p.add_argument("--eps-decay-steps", type=int, default=EPS_DECAY_STEPS,
                    help=f"Steps over which epsilon decays from 1.0 to 0.05 (default {EPS_DECAY_STEPS})")
     p.add_argument("--bg-strategy", type=int, default=None,
@@ -804,6 +935,30 @@ def parse_args():
                    help="Global random seed for reproducibility (default 42)")
     p.add_argument("--reward-norm", type=float, default=None,
                    help="Override reward normalizer in ENV_KWARGS (default: 1e3)")
+    p.add_argument("--device", type=str, default=None,
+                   help="Training device: 'cuda', 'cpu', etc. (default: cuda if available)")
+    p.add_argument("--entropy-coef", type=float, default=0.05,
+                   help="Entropy bonus coefficient for action-diversity regularisation (default 0.05)")
+    p.add_argument("--advantage-reward", action="store_true",
+                   help="Reward = TRON delta - mean bg-agent delta (reduces market-wide noise)")
+    p.add_argument("--pv-norm", type=float, default=None,
+                   help="Override pv normalizer; if omitted, auto-set to sqrt(pv_var)")
+    p.add_argument("--fix-eta", action="store_true",
+                   help="Fix eta=0.5 (single bin); removes eta from the action space so only shade is learned")
+    p.add_argument("--n-step", type=int, default=N_STEP,
+                   help=f"n-step return horizon (default {N_STEP})")
+    p.add_argument("--tau", type=float, default=TAU,
+                   help=f"Polyak soft target update coefficient (default {TAU}; replaces hard copy)")
+    p.add_argument("--lr-milestones", type=int, nargs="+", default=None,
+                   help="Env-step counts at which LR is multiplied by --lr-gamma (e.g. 1000000 3000000)")
+    p.add_argument("--lr-gamma", type=float, default=0.3,
+                   help="LR decay factor applied at each --lr-milestones step (default 0.3)")
+    p.add_argument("--paired-proxy", action="store_true",
+                   help="(Option A) Add a ZI S8 proxy with shared pv; reward = TRON_delta - proxy_delta")
+    p.add_argument("--reward-std-norm", action="store_true",
+                   help="(Option B) Normalize rewards by running std before storing in replay buffer")
+    p.add_argument("--clip-reward", type=float, default=None,
+                   help="(Option C) Clip normalized reward to [-VALUE, +VALUE] (e.g. 1.0)")
     return p.parse_args()
 
 
@@ -827,17 +982,31 @@ def main():
         ENV_KWARGS['shock_var'] = args.shock_var
     if args.pv_var is not None:
         ENV_KWARGS['pv_var'] = args.pv_var
+    # Fix C: auto-set pv normalizer to sqrt(pv_var) so observation features span ±1
+    pv_n = args.pv_norm if args.pv_norm is not None else float(np.sqrt(ENV_KWARGS['pv_var']))
+    ENV_KWARGS['normalizers'] = dict(ENV_KWARGS['normalizers'], pv=pv_n)
     if args.skew_bins:
         ENV_KWARGS['shade_bins'] = SKEWED_SHADE_BINS
+    if args.s8_bins:
+        ENV_KWARGS['shade_bins'] = S8_SKEWED_SHADE_BINS
     if args.bg_strategy is not None:
         strat = _STRATEGIES[args.bg_strategy]
         ENV_KWARGS['bg_strategies'] = [{'shade': strat['shade'], 'eta': strat['eta']}]
+    if args.paired_proxy:
+        ENV_KWARGS['paired_proxy'] = True
     if args.reward_norm is not None:
         ENV_KWARGS['normalizers'] = dict(ENV_KWARGS['normalizers'], reward=args.reward_norm)
+    if args.advantage_reward:
+        ENV_KWARGS['advantage_reward'] = True
+    if args.fix_eta:
+        ENV_KWARGS['eta_bins'] = FIXED_ETA_BINS
+    device = torch.device(args.device) if args.device else DEVICE
+    print(f"Using device: {device}")
+
     if args.eval_only:
-        eval_only(args)
+        eval_only(args, device)
     else:
-        train(args)
+        train(args, device)
 
 
 if __name__ == "__main__":

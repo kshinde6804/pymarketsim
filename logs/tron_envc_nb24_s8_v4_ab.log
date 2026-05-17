@@ -1,0 +1,37 @@
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_v4_ab
+Device: cuda
+
+Training TRON (R2D2) for 3,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=15
+  hidden_dim=256, shade_bins=s8-skewed (n=42), eta_bins=fixed=0.5 (n=1)
+  tau=0.005 (Polyak), lr=0.0001 decay×0.3 at env steps [1000000, 3000000]
+  eps_decay_steps=1000000, entropy_coef=0.05, train_freq=4
+  eval_episodes=1000, eval_window=3, reward=paired-proxy, rew_norm=std-norm(w=10k), no-clip
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07, pv_n=4.47e+03
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  Saved model → runs/tron_envc_nb24_s8_v4_ab/best_model.pt
+  step=  50,000  eval=-0.361±9.154  roll=-0.361  eps=0.953  loss=1.0319  10.8min  *saved*
+  step= 100,000  eval=-0.849±9.966  roll=-0.605  eps=0.905  loss=0.9962  22.4min
+  step= 150,000  eval=-0.334±9.758  roll=-0.514  eps=0.858  loss=0.9154  34.2min
+  step= 200,000  eval=-0.540±8.171  roll=-0.574  eps=0.810  loss=0.8688  45.7min
+  step= 250,000  eval=-0.637±8.067  roll=-0.503  eps=0.762  loss=0.8611  57.1min
+  step= 300,000  eval=-0.016±9.129  roll=-0.397  eps=0.715  loss=0.8342  69.1min
+  step= 350,000  eval=-0.436±8.947  roll=-0.363  eps=0.667  loss=0.8583  81.6min
+  Saved model → runs/tron_envc_nb24_s8_v4_ab/best_model.pt
+  step= 400,000  eval=-0.073±8.794  roll=-0.175  eps=0.620  loss=0.8553  93.0min  *saved*
+  step= 450,000  eval=-0.257±9.027  roll=-0.255  eps=0.573  loss=0.9035  105.8min
+  Saved model → runs/tron_envc_nb24_s8_v4_ab/best_model.pt
+  step= 500,000  eval=-0.106±8.277  roll=-0.145  eps=0.525  loss=0.8783  117.2min  *saved*
+  step= 550,000  eval=-0.615±8.845  roll=-0.326  eps=0.478  loss=0.8674  128.7min
+  step= 600,000  eval=-0.168±8.917  roll=-0.296  eps=0.430  loss=0.8661  140.5min
+  step= 650,000  eval=-0.105±7.970  roll=-0.296  eps=0.383  loss=0.9117  152.1min
+  step= 700,000  eval=-0.225±7.921  roll=-0.166  eps=0.335  loss=0.8871  163.9min
+  step= 750,000  eval=-0.388±8.020  roll=-0.239  eps=0.288  loss=0.8569  175.7min
+  step= 800,000  eval=-0.558±8.211  roll=-0.390  eps=0.240  loss=0.9201  187.4min
+  step= 850,000  eval=-0.216±9.161  roll=-0.387  eps=0.193  loss=0.9216  199.0min
