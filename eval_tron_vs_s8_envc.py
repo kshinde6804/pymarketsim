@@ -19,6 +19,7 @@ import torch
 import multiprocessing as mp
 from collections import Counter
 from pathlib import Path
+from scipy import stats as st
 
 from marketsim.agent.tron_agent import TRONPolicy
 from marketsim.wrappers.tron_env import TRONEnv
@@ -92,6 +93,7 @@ MODELS = {
 # ── ZI S8 baseline (unpaired) ─────────────────────────────────────────────────
 
 def _zi_s8_worker(args):
+    torch.set_num_threads(1)
     num_runs, base_seed = args
     dev_profits = []
     for run_idx in range(num_runs):
@@ -214,6 +216,7 @@ def _run_episode_zi_proxy(env: TRONEnv) -> float:
 
 def _paired_worker(args):
     """Run num_runs paired trials. Each trial seeds both TRON and ZI runs identically."""
+    torch.set_num_threads(1)
     policy_path, num_runs, base_seed = args
 
     policy = _load_policy(policy_path)
@@ -250,12 +253,14 @@ def run_paired_eval(model_name: str, weights_path: str, num_runs: int, n_proc: i
     all_adv = [a for sub in results for a in sub]
     mean_adv = float(np.mean(all_adv))
     se_adv   = float(np.std(all_adv, ddof=1) / np.sqrt(len(all_adv)))
-    return mean_adv, se_adv
+    t_stat, p_val = st.ttest_1samp(all_adv, 0.0)
+    return mean_adv, se_adv, float(t_stat), float(p_val)
 
 
 # ── Unpaired TRON eval ────────────────────────────────────────────────────────
 
 def _tron_worker(args):
+    torch.set_num_threads(1)
     model_name, weights_path, num_runs = args
 
     policy = _load_policy(weights_path)
@@ -419,15 +424,15 @@ def main():
             run_action_diag(policy)
 
         if args.paired:
-            mean_adv, se_adv = run_paired_eval(model_name, weights_path, num_runs, n_proc)
-            results[model_name] = (mean_adv, se_adv, 'paired')
-            broken = "YES" if mean_adv > 2 * se_adv else "no"
-            print(f"  {model_name}: paired_advantage={mean_adv:+.1f} ± {se_adv:.1f}  NE broken? {broken}")
+            mean_adv, se_adv, t_stat, p_val = run_paired_eval(model_name, weights_path, num_runs, n_proc)
+            results[model_name] = (mean_adv, se_adv, t_stat, p_val, 'paired')
+            broken = "YES" if t_stat > 0 and p_val < 0.05 else "no"
+            print(f"  {model_name}: paired_advantage={mean_adv:+.1f} ± {se_adv:.1f}  t={t_stat:.2f}  p={p_val:.3f}  NE broken? {broken}")
         else:
             _, ep_profits = _tron_worker((model_name, weights_path, num_runs))
             mean_p = float(np.mean(ep_profits))
             se_p   = float(np.std(ep_profits, ddof=1) / np.sqrt(len(ep_profits)))
-            results[model_name] = (mean_p, se_p, 'unpaired')
+            results[model_name] = (mean_p, se_p, None, None, 'unpaired')
             adv = mean_p - zi_mean
             broken = "YES" if adv > 2 * se_p else "no"
             print(f"  {model_name}: profit={mean_p:+.1f} ± {se_p:.1f}  advantage={adv:+.1f}  NE broken? {broken}")
@@ -449,7 +454,7 @@ def main():
             print(f"  (Paired eval not implemented for ensemble — showing unpaired profit)")
         adv = mean_p - zi_mean if zi_mean is not None else float('nan')
         broken = "YES" if adv > 2 * se_p else "no"
-        results[ename] = (mean_p, se_p, 'ensemble')
+        results[ename] = (mean_p, se_p, None, None, 'ensemble')
         print(f"  {ename}: profit={mean_p:+.1f} ± {se_p:.1f}  advantage={adv:+.1f}  NE broken? {broken}")
 
     # ── Summary table ─────────────────────────────────────────────────────────
@@ -457,25 +462,27 @@ def main():
         print("No models evaluated (check --models and model file paths).")
         return
 
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     if args.paired:
-        print(f"{'Model':<22}  {'Paired advantage':>18}  {'2×SE threshold':>14}  {'NE broken?':>10}")
-        print("-" * 80)
-        for name, (val, se, mode) in results.items():
-            broken = "YES" if val > 2 * se else "no"
-            print(f"{name:<22}  {val:>+14.1f} ±{se:>5.1f}  {2*se:>+14.1f}  {broken:>10}")
-        print("=" * 80)
+        print(f"{'Model':<22}  {'Paired advantage':>18}  {'t-stat':>7}  {'p-value':>7}  {'NE broken?':>10}")
+        print("-" * 90)
+        for name, (val, se, t, p, mode) in results.items():
+            broken = "YES" if (t is not None and t > 0 and p < 0.05) else "no"
+            t_str = f"{t:>7.2f}" if t is not None else "    N/A"
+            p_str = f"{p:>7.3f}" if p is not None else "    N/A"
+            print(f"{name:<22}  {val:>+14.1f} ±{se:>5.1f}  {t_str}  {p_str}  {broken:>10}")
+        print("=" * 90)
         print("\nPaired advantage = TRON profit − ZI-proxy profit on matched episodes.")
-        print("NE broken if paired advantage > 2×SE (95% one-sided).")
+        print("NE broken if t > 0 and p < 0.05 (one-sample t-test vs. H0: advantage=0).")
     else:
         print(f"{'Model':<22}  {'TRON profit':>14}  {'ZI S8 baseline':>14}  {'Advantage':>10}  {'NE broken?':>10}")
-        print("-" * 80)
-        for name, (val, se, mode) in results.items():
+        print("-" * 90)
+        for name, (val, se, t, p, mode) in results.items():
             adv = val - zi_mean if zi_mean is not None else float('nan')
             broken = "YES" if adv > 2 * se else "no"
             print(f"{name:<22}  {val:>+10.1f} ±{se:>5.1f}  "
                   f"{zi_mean:>+10.1f} ±{zi_se:>5.1f}  {adv:>+10.1f}  {broken:>10}")
-        print("=" * 80)
+        print("=" * 90)
         print(f"\nNE broken if TRON advantage > 2× std-error of TRON profit.")
 
 

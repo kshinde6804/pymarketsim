@@ -1,0 +1,169 @@
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_v6
+Device: cuda
+
+Training TRON (R2D2) for 6,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=15
+  hidden_dim=256, shade_bins=s8-skewed (n=42), eta_bins=fixed=0.5 (n=1)
+  tau=0.005 (Polyak), lr=0.0001 constant
+  eps_decay_steps=1000000, entropy_coef=0.05, train_freq=4
+  eval_episodes=1000, eval_window=3, reward=paired-proxy, rew_norm=std-norm(w=10k), clip=±1.0
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07, pv_n=4.47e+03
+
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=  50,000  eval=+0.105±9.559  t=0.35  p=0.729  roll=+0.105  eps=0.953  loss=0.0137  10.1min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step= 100,000  eval=+0.164±9.441  t=0.55  p=0.583  roll=+0.134  eps=0.905  loss=0.0072  20.7min  *saved*
+  step= 150,000  eval=-0.131±9.550  t=-0.43  p=0.665  roll=+0.046  eps=0.858  loss=0.0135  31.2min
+  step= 200,000  eval=-0.030±9.551  t=-0.10  p=0.920  roll=+0.001  eps=0.810  loss=0.0153  41.5min
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Using device: cuda
+
+Run directory: runs/tron_envc_nb24_s8_v6
+Device: cuda
+Resuming from checkpoint: runs/tron_envc_nb24_s8_v6/best_model.pt
+
+Training TRON (R2D2) for 6,000,000 steps
+  seq_len=32, burnin=0, batch=64, n_step=15
+  hidden_dim=256, shade_bins=s8-skewed (n=42), eta_bins=fixed=0.5 (n=1)
+  tau=0.005 (Polyak), lr=0.0001 constant
+  eps_decay_steps=1000000, entropy_coef=0.05, train_freq=4
+  eval_episodes=1000, eval_window=3, reward=paired-proxy, rew_norm=std-norm(w=10k), clip=±1.0
+  env sim_time=2000, lam=0.012, lam_zi=0.012, shock_var=1.00e+06, pv_var=2.00e+07, pv_n=4.47e+03
+
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step= 250,000  eval=+0.085±9.643  t=0.28  p=0.781  roll=+0.085  eps=0.762  loss=-0.0778  9.8min  *saved*
+  step= 300,000  eval=-0.054±9.255  t=-0.18  p=0.855  roll=+0.016  eps=0.715  loss=-0.0546  20.1min
+  step= 350,000  eval=-0.117±9.866  t=-0.37  p=0.709  roll=-0.028  eps=0.667  loss=-0.0411  30.2min
+  step= 400,000  eval=+0.049±8.512  t=0.18  p=0.857  roll=-0.041  eps=0.620  loss=-0.0327  40.7min
+  step= 450,000  eval=-0.499±9.811  t=-1.61  p=0.108  roll=-0.189  eps=0.573  loss=-0.0251  51.3min
+  step= 500,000  eval=-0.211±8.866  t=-0.75  p=0.452  roll=-0.221  eps=0.525  loss=-0.0153  61.7min
+  step= 550,000  eval=-0.038±8.979  t=-0.13  p=0.893  roll=-0.249  eps=0.478  loss=-0.0066  71.9min
+  step= 600,000  eval=-0.092±8.681  t=-0.33  p=0.738  roll=-0.114  eps=0.430  loss=-0.0019  81.9min
+  step= 650,000  eval=+0.194±9.371  t=0.65  p=0.514  roll=+0.021  eps=0.383  loss=0.0099  91.9min
+  step= 700,000  eval=-0.136±9.503  t=-0.45  p=0.650  roll=-0.012  eps=0.335  loss=0.0162  102.0min
+  step= 750,000  eval=+0.060±9.545  t=0.20  p=0.843  roll=+0.039  eps=0.288  loss=0.0156  112.1min
+  step= 800,000  eval=-0.269±9.957  t=-0.85  p=0.393  roll=-0.115  eps=0.240  loss=0.0216  122.2min
+  step= 850,000  eval=+0.044±9.658  t=0.14  p=0.886  roll=-0.055  eps=0.193  loss=0.0256  132.9min
+  step= 900,000  eval=+0.258±9.939  t=0.82  p=0.413  roll=+0.011  eps=0.145  loss=0.0243  143.6min
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step= 950,000  eval=+0.054±10.131  t=0.17  p=0.866  roll=+0.119  eps=0.098  loss=0.0270  154.2min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=1,000,000  eval=+0.292±9.764  t=0.95  p=0.345  roll=+0.201  eps=0.050  loss=0.0383  164.8min  *saved*
+  step=1,050,000  eval=-0.483±9.610  t=-1.59  p=0.112  roll=-0.046  eps=0.050  loss=0.0452  175.6min
+  step=1,100,000  eval=-0.264±10.263  t=-0.81  p=0.417  roll=-0.152  eps=0.050  loss=0.0413  186.1min
+  step=1,150,000  eval=+0.092±8.611  t=0.34  p=0.736  roll=-0.218  eps=0.050  loss=0.0510  196.9min
+  step=1,200,000  eval=-0.266±9.125  t=-0.92  p=0.357  roll=-0.146  eps=0.050  loss=0.0521  207.7min
+  step=1,250,000  eval=+0.135±9.717  t=0.44  p=0.662  roll=-0.013  eps=0.050  loss=0.0617  218.1min
+  step=1,300,000  eval=-0.295±9.708  t=-0.96  p=0.337  roll=-0.142  eps=0.050  loss=0.0557  228.4min
+  step=1,350,000  eval=-0.053±9.140  t=-0.18  p=0.855  roll=-0.071  eps=0.050  loss=0.0591  238.5min
+  step=1,400,000  eval=+0.367±10.320  t=1.12  p=0.262  roll=+0.006  eps=0.050  loss=0.0671  248.7min
+  step=1,450,000  eval=-0.335±9.899  t=-1.07  p=0.284  roll=-0.007  eps=0.050  loss=0.0695  259.2min
+  step=1,500,000  eval=+0.160±9.082  t=0.56  p=0.579  roll=+0.064  eps=0.050  loss=0.0782  269.6min
+  step=1,550,000  eval=+0.347±9.085  t=1.21  p=0.227  roll=+0.057  eps=0.050  loss=0.0823  280.3min
+  step=1,600,000  eval=-0.019±10.122  t=-0.06  p=0.953  roll=+0.163  eps=0.050  loss=0.0752  290.6min
+  step=1,650,000  eval=-0.260±10.130  t=-0.81  p=0.417  roll=+0.023  eps=0.050  loss=0.0768  300.8min
+  step=1,700,000  eval=-0.330±10.284  t=-1.01  p=0.311  roll=-0.203  eps=0.050  loss=0.0750  311.2min
+  step=1,750,000  eval=-0.215±9.983  t=-0.68  p=0.497  roll=-0.268  eps=0.050  loss=0.0768  321.5min
+  step=1,800,000  eval=+0.153±9.046  t=0.53  p=0.594  roll=-0.131  eps=0.050  loss=0.0797  331.6min
+  step=1,850,000  eval=-0.130±9.689  t=-0.42  p=0.671  roll=-0.064  eps=0.050  loss=0.0686  342.0min
+  step=1,900,000  eval=+0.064±9.108  t=0.22  p=0.825  roll=+0.029  eps=0.050  loss=0.0696  352.3min
+  step=1,950,000  eval=+0.551±9.643  t=1.81  p=0.071  roll=+0.162  eps=0.050  loss=0.0722  362.7min
+  step=2,000,000  eval=-0.147±10.441  t=-0.45  p=0.656  roll=+0.156  eps=0.050  loss=0.0716  372.9min
+  step=2,050,000  eval=-0.129±9.739  t=-0.42  p=0.676  roll=+0.092  eps=0.050  loss=0.0788  382.8min
+  step=2,100,000  eval=-0.536±10.882  t=-1.56  p=0.120  roll=-0.271  eps=0.050  loss=0.0765  393.2min
+  step=2,150,000  eval=+0.206±10.010  t=0.65  p=0.515  roll=-0.153  eps=0.050  loss=0.0764  403.5min
+  step=2,200,000  eval=-0.060±8.966  t=-0.21  p=0.831  roll=-0.130  eps=0.050  loss=0.0675  413.7min
+  step=2,250,000  eval=+0.382±9.249  t=1.31  p=0.192  roll=+0.176  eps=0.050  loss=0.0687  424.2min
+  step=2,300,000  eval=+0.176±9.983  t=0.56  p=0.577  roll=+0.166  eps=0.050  loss=0.0732  434.6min
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=2,350,000  eval=+0.374±10.224  t=1.16  p=0.248  roll=+0.311  eps=0.050  loss=0.0733  445.3min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=2,400,000  eval=+0.434±9.584  t=1.43  p=0.153  roll=+0.328  eps=0.050  loss=0.0619  456.8min  *saved*
+  step=2,450,000  eval=-0.098±8.930  t=-0.35  p=0.728  roll=+0.236  eps=0.050  loss=0.0674  467.7min
+  step=2,500,000  eval=+0.248±10.211  t=0.77  p=0.443  roll=+0.194  eps=0.050  loss=0.0704  478.6min
+  step=2,550,000  eval=+0.496±9.544  t=1.64  p=0.101  roll=+0.215  eps=0.050  loss=0.0658  489.0min
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=2,600,000  eval=+0.280±9.175  t=0.96  p=0.336  roll=+0.341  eps=0.050  loss=0.0601  500.2min  *saved*
+  Saved model → runs/tron_envc_nb24_s8_v6/best_model.pt
+  step=2,650,000  eval=+0.465±8.912  t=1.65  p=0.100  roll=+0.413  eps=0.050  loss=0.0600  511.0min  *saved*
+  step=2,700,000  eval=-0.096±9.484  t=-0.32  p=0.749  roll=+0.216  eps=0.050  loss=0.0689  521.9min
+  step=2,750,000  eval=-0.377±9.794  t=-1.22  p=0.224  roll=-0.003  eps=0.050  loss=0.0600  533.0min
+  step=2,800,000  eval=-0.357±10.005  t=-1.13  p=0.260  roll=-0.277  eps=0.050  loss=0.0566  543.6min
+  step=2,850,000  eval=-0.016±9.651  t=-0.05  p=0.957  roll=-0.250  eps=0.050  loss=0.0598  554.4min
+  step=2,900,000  eval=+0.021±9.860  t=0.07  p=0.947  roll=-0.117  eps=0.050  loss=0.0613  565.3min
+  step=2,950,000  eval=-0.635±10.811  t=-1.86  p=0.064  roll=-0.210  eps=0.050  loss=0.0566  576.1min
+  step=3,000,000  eval=+0.426±10.251  t=1.31  p=0.189  roll=-0.063  eps=0.050  loss=0.0567  586.7min
+  step=3,050,000  eval=-0.062±10.170  t=-0.19  p=0.847  roll=-0.090  eps=0.050  loss=0.0559  597.2min
+  step=3,100,000  eval=-0.141±9.563  t=-0.47  p=0.641  roll=+0.074  eps=0.050  loss=0.0508  608.4min
+  step=3,150,000  eval=+0.067±10.182  t=0.21  p=0.836  roll=-0.045  eps=0.050  loss=0.0537  619.4min
+  step=3,200,000  eval=+0.093±9.474  t=0.31  p=0.757  roll=+0.006  eps=0.050  loss=0.0562  630.2min
+  step=3,250,000  eval=+0.107±9.484  t=0.36  p=0.722  roll=+0.089  eps=0.050  loss=0.0469  640.9min
+  step=3,300,000  eval=-0.064±9.121  t=-0.22  p=0.823  roll=+0.045  eps=0.050  loss=0.0526  651.7min
+  step=3,350,000  eval=+0.216±9.996  t=0.68  p=0.494  roll=+0.086  eps=0.050  loss=0.0529  662.7min
+  step=3,400,000  eval=-0.088±10.162  t=-0.27  p=0.785  roll=+0.021  eps=0.050  loss=0.0482  673.6min
+  step=3,450,000  eval=-0.285±10.182  t=-0.88  p=0.377  roll=-0.052  eps=0.050  loss=0.0521  684.4min
+  step=3,500,000  eval=+0.131±10.546  t=0.39  p=0.696  roll=-0.081  eps=0.050  loss=0.0447  695.3min
+  step=3,550,000  eval=-0.153±9.827  t=-0.49  p=0.622  roll=-0.102  eps=0.050  loss=0.0500  706.5min
+  step=3,600,000  eval=-0.388±9.554  t=-1.28  p=0.199  roll=-0.137  eps=0.050  loss=0.0430  717.2min
+  step=3,650,000  eval=+0.248±10.543  t=0.74  p=0.458  roll=-0.098  eps=0.050  loss=0.0423  728.1min
+  step=3,700,000  eval=+0.293±10.064  t=0.92  p=0.357  roll=+0.051  eps=0.050  loss=0.0526  739.0min
+  step=3,750,000  eval=+0.126±9.478  t=0.42  p=0.675  roll=+0.222  eps=0.050  loss=0.0510  750.2min
+  step=3,800,000  eval=+0.068±9.527  t=0.23  p=0.821  roll=+0.162  eps=0.050  loss=0.0411  761.1min
+  step=3,850,000  eval=-0.055±8.843  t=-0.20  p=0.845  roll=+0.046  eps=0.050  loss=0.0494  771.9min
+  step=3,900,000  eval=-0.346±9.151  t=-1.19  p=0.232  roll=-0.111  eps=0.050  loss=0.0395  782.8min
+  step=3,950,000  eval=-0.103±9.618  t=-0.34  p=0.734  roll=-0.168  eps=0.050  loss=0.0416  794.0min
+  step=4,000,000  eval=-0.440±9.722  t=-1.43  p=0.153  roll=-0.297  eps=0.050  loss=0.0388  805.3min
+  step=4,050,000  eval=+0.999±9.619  t=3.28  p=0.001★  roll=+0.152  eps=0.050  loss=0.0448  816.3min
+  step=4,100,000  eval=-0.210±9.962  t=-0.67  p=0.505  roll=+0.116  eps=0.050  loss=0.0400  827.1min
+  step=4,150,000  eval=-0.090±10.083  t=-0.28  p=0.778  roll=+0.233  eps=0.050  loss=0.0371  838.2min
+  step=4,200,000  eval=-0.161±9.711  t=-0.52  p=0.600  roll=-0.154  eps=0.050  loss=0.0412  849.1min
+  step=4,250,000  eval=-0.373±9.666  t=-1.22  p=0.223  roll=-0.208  eps=0.050  loss=0.0408  859.9min
+  step=4,300,000  eval=+0.243±9.499  t=0.81  p=0.418  roll=-0.097  eps=0.050  loss=0.0427  870.9min
+  step=4,350,000  eval=+0.033±9.858  t=0.10  p=0.916  roll=-0.032  eps=0.050  loss=0.0398  882.3min
+  step=4,400,000  eval=-0.222±9.798  t=-0.72  p=0.475  roll=+0.018  eps=0.050  loss=0.0375  893.8min
+  step=4,450,000  eval=+0.218±10.377  t=0.66  p=0.506  roll=+0.010  eps=0.050  loss=0.0344  904.8min
+  step=4,500,000  eval=-0.189±9.306  t=-0.64  p=0.521  roll=-0.064  eps=0.050  loss=0.0414  915.6min
+  step=4,550,000  eval=-0.302±9.187  t=-1.04  p=0.299  roll=-0.091  eps=0.050  loss=0.0394  926.5min
+  step=4,600,000  eval=-0.115±8.711  t=-0.42  p=0.677  roll=-0.202  eps=0.050  loss=0.0361  937.3min
+  step=4,650,000  eval=+0.238±10.021  t=0.75  p=0.453  roll=-0.060  eps=0.050  loss=0.0404  948.2min
+  step=4,700,000  eval=+0.182±9.678  t=0.59  p=0.552  roll=+0.102  eps=0.050  loss=0.0324  959.2min
+  step=4,750,000  eval=+0.576±9.995  t=1.82  p=0.069  roll=+0.332  eps=0.050  loss=0.0365  970.2min
+  step=4,800,000  eval=+0.201±10.296  t=0.62  p=0.537  roll=+0.320  eps=0.050  loss=0.0295  981.1min
+  step=4,850,000  eval=+0.220±9.525  t=0.73  p=0.466  roll=+0.332  eps=0.050  loss=0.0332  992.0min
+  step=4,900,000  eval=+0.033±9.353  t=0.11  p=0.911  roll=+0.151  eps=0.050  loss=0.0330  1002.6min
+  step=4,950,000  eval=+0.198±9.067  t=0.69  p=0.489  roll=+0.151  eps=0.050  loss=0.0312  1013.3min
+  step=5,000,000  eval=-0.179±9.925  t=-0.57  p=0.568  roll=+0.017  eps=0.050  loss=0.0294  1024.4min
+  step=5,050,000  eval=+0.323±10.297  t=0.99  p=0.322  roll=+0.114  eps=0.050  loss=0.0322  1035.2min
+  step=5,100,000  eval=+0.138±10.422  t=0.42  p=0.676  roll=+0.094  eps=0.050  loss=0.0310  1046.0min
+  step=5,150,000  eval=+0.128±9.942  t=0.41  p=0.684  roll=+0.196  eps=0.050  loss=0.0347  1056.7min
+  step=5,200,000  eval=-0.370±9.966  t=-1.17  p=0.241  roll=-0.035  eps=0.050  loss=0.0263  1067.5min
+  step=5,250,000  eval=+0.196±10.045  t=0.62  p=0.538  roll=-0.015  eps=0.050  loss=0.0340  1078.0min
+  step=5,300,000  eval=+0.052±10.072  t=0.16  p=0.870  roll=-0.041  eps=0.050  loss=0.0294  1088.8min
+  step=5,350,000  eval=+0.261±9.308  t=0.88  p=0.376  roll=+0.169  eps=0.050  loss=0.0374  1099.6min
+  step=5,400,000  eval=-0.233±9.550  t=-0.77  p=0.440  roll=+0.027  eps=0.050  loss=0.0343  1110.6min
+  step=5,450,000  eval=-1.037±9.914  t=-3.31  p=0.001  roll=-0.336  eps=0.050  loss=0.0307  1121.3min
+  step=5,500,000  eval=-0.167±9.839  t=-0.54  p=0.592  roll=-0.479  eps=0.050  loss=0.0379  1131.9min
+  step=5,550,000  eval=+0.287±9.465  t=0.96  p=0.339  roll=-0.306  eps=0.050  loss=0.0300  1142.7min
+  step=5,600,000  eval=+0.169±9.240  t=0.58  p=0.563  roll=+0.096  eps=0.050  loss=0.0272  1153.5min
+  step=5,650,000  eval=+0.483±9.494  t=1.61  p=0.108  roll=+0.313  eps=0.050  loss=0.0303  1164.3min
+  step=5,700,000  eval=-0.338±9.765  t=-1.09  p=0.274  roll=+0.105  eps=0.050  loss=0.0313  1174.9min
+  step=5,750,000  eval=+0.129±9.352  t=0.43  p=0.664  roll=+0.091  eps=0.050  loss=0.0418  1185.8min
+  step=5,800,000  eval=+0.203±9.327  t=0.69  p=0.492  roll=-0.002  eps=0.050  loss=0.0237  1196.4min
+  step=5,850,000  eval=+0.366±9.316  t=1.24  p=0.214  roll=+0.233  eps=0.050  loss=0.0350  1207.0min
+  step=5,900,000  eval=+0.120±9.777  t=0.39  p=0.699  roll=+0.230  eps=0.050  loss=0.0296  1218.0min
+  step=5,950,000  eval=+0.321±9.821  t=1.03  p=0.301  roll=+0.269  eps=0.050  loss=0.0303  1228.8min
+  step=6,000,000  eval=-0.645±10.720  t=-1.90  p=0.057  roll=-0.068  eps=0.050  loss=0.0269  1239.8min
+  Saved model → runs/tron_envc_nb24_s8_v6/final_model.pt
+
+Training complete. Best rolling eval: +0.4133
+All outputs in: runs/tron_envc_nb24_s8_v6/
+  Saved: runs/tron_envc_nb24_s8_v6/learning_curve.png

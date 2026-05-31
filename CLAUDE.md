@@ -4,34 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## IMPORTANT: Running Long-Running Processes
 
-**ALL long-running Python commands (training, experiments, equilibrium runs) MUST be wrapped with `caffeinate` to prevent the process from being interrupted if the computer goes to sleep.**
+Run training and experiments directly with `venv/bin/python`. `caffeinate` is not available on this Linux HPC system.
 
-When running any of the following commands from the terminal, ALWAYS prefix them with `caffeinate -disu`:
-
-- `train_mlp.py` — SAC training (can take 25-40+ minutes)
-- `train_tron.py` — R2D2 training (can take hours)
-- `equilibrium_mlp.py` — Equilibrium experiments (hundreds/thousands of simulations)
-- `equilibrium_tron.py` — Equilibrium experiments (hundreds/thousands of simulations)
-- `experiments/NE_ZI-ZI/equilibrium_experiment.py` — Full 10×10 experiment (10,000+ simulations)
-
-**Example usage:**
+For long-running sessions, use `screen` or `tmux` so the process survives terminal disconnects:
 ```bash
-# Instead of: python train_mlp.py --tag v1
-# Always use:
-caffeinate -disu python train_mlp.py --tag v1
-
-# Instead of: python equilibrium_tron.py --num-runs 500
-# Always use:
-caffeinate -disu python equilibrium_tron.py --num-runs 500
+screen -S training   # start named screen session
+# run your command, then Ctrl+A D to detach; screen -r training to reattach
 ```
 
-The `caffeinate` flags:
-- `-d` prevents the display from sleeping
-- `-i` prevents the system from idle sleeping
-- `-s` prevents the system from sleeping (works when on AC power)
-- `-u` prevents the system from sleeping when on battery
-
-This ensures that if the user's computer goes to sleep during a long-running task, the process will continue running uninterrupted.
+**SLURM batch submission** (`train_tron2_slurm.sh`) is available for submitting to the cluster queue, but only use it when explicitly asked to. See `memory/slurm_batch_jobs.md` for details.
 
 ## Setup
 
@@ -60,9 +41,11 @@ marketsim/
     zero_intelligence_agent.py   # ZIAgent base (shade/eta, Bayesian fundamental, update_position)
     mlp_agent.py                 # ZIMlpPolicy + MLPAgent (inherits ZIAgent, 13-dim obs, SAC)
     tron_agent.py                # TRONPolicy + TRONAgent (Dueling DQN + LSTM, 14-dim obs, R2D2)
+    tron2_agent.py               # TRONPolicy2 + TRONAgent2 (Dueling DQN + LSTM, Table 3 replication)
   wrappers/
     zi_env.py                    # ZIEnv: Gymnasium env for SAC (continuous Box action)
     tron_env.py                  # TRONEnv: Gymnasium env for R2D2 (MultiDiscrete action)
+    tron2_env.py                 # TRONEnv2: MultiDiscrete action, ENV_CONFIGS A/B/C, 24 bg agents
     metrics.py                   # Order-book metrics: RSI, vol_imbalance, realized_vol, etc.
   market/market.py               # Market class (FourHeap + fundamental + event_queue)
   simulator/simulator.py         # Simulator: agent dict, markets list, Poisson arrivals
@@ -79,6 +62,9 @@ experiments/
 
 train_mlp.py                     # SAC training script for ZIEnv (stable-baselines3)
 train_tron.py                    # R2D2 training script for TRONEnv (custom PyTorch)
+train_tron2.py                   # R2D2 training for TRONEnv2 (episode replay, n-step, ε-greedy)
+eval_tron2.py                    # Evaluate TRON2 vs ZI baseline; Table 3 targets
+train_tron2_slurm.sh             # SLURM batch script wrapping train_tron2.py
 equilibrium_mlp.py               # Extend 10×10 ZI table to 10×11 with SAC-MLP deviator
 equilibrium_tron.py              # Extend 10×10 ZI table to 10×11 with TRON deviator
 ```
@@ -119,6 +105,7 @@ All agents extend `Agent` (ABC) and implement `take_action() → List[Order]`.
 - **ZIAgent** (`marketsim/agent/zero_intelligence_agent.py`) — base agent: shade (valuation offset) + eta (liquidity-taking threshold); `estimate_fundamental()` computes Bayesian posterior; `update_position(q, p)` settles executions
 - **MLPAgent** (`marketsim/agent/mlp_agent.py`) — inherits ZIAgent; `ZIMlpPolicy` is a 3-layer ReLU MLP (hidden=64) with Sigmoid output producing `[shade_norm, eta]`; `build_obs()` → 13-dim; uses `market.end_time` for correct `time_left` in Simulator context
 - **TRONAgent** (`marketsim/agent/tron_agent.py`) — inherits ZIAgent; `TRONPolicy` is Dueling DQN + LSTM (hidden=128); discrete actions: 21 shade bins × 21 eta bins; `build_obs(side)` → 14-dim (13 + side indicator); LSTM state `self.h_c` stored per-episode and zeroed in `reset()`
+- **TRONAgent2** (`marketsim/agent/tron2_agent.py`) — Table 3 replication; `TRONPolicy2` is Dueling DQN + LSTM (hidden=128); SHADE_BINS=linspace(0,1000,21), ETA_BINS=linspace(0,1,21); 14-dim obs; episode-level LSTM state zeroed in `reset()`
 
 ### Fundamentals
 
@@ -165,6 +152,17 @@ SHADE_BINS = np.linspace(0, 600, 21)   # 21 uniformly spaced values
 ETA_BINS   = np.linspace(0, 1, 21)     # 21 values in [0, 1]
 ```
 
+### RL Environment: TRONEnv2
+
+`TRONEnv2` (`marketsim/wrappers/tron2_env.py`) — Table 3 replication env (N=25: 24 bg ZI + 1 TRON).
+
+**Action space:** `MultiDiscrete([21, 21])` decoded via `SHADE_BINS`/`ETA_BINS` (0–1000, 0–1).
+
+**ENV_CONFIGS** selects lam/shock_var/pv_var/reward-normalizer per env tag (A/B/C).
+
+**Arrival safety:** `_reset_arrivals()` loops until first RL arrival < sim_time — essential for
+sparse Env A (λ=0.0005) where geometric draws can exceed 2000 ~50% of the time.
+
 ### TRONPolicy Architecture
 
 ```
@@ -206,29 +204,34 @@ ENV = {'lam': 0.005, 'mean': 1e5, 'r': 0.01, 'shock_var': 1e6,
 
 ### Training
 
-**IMPORTANT:** All training commands MUST be run with `caffeinate -disu` to prevent sleep interruptions.
-
 ```bash
 # SAC MLP agent (stable-baselines3)
-caffeinate -disu python train_mlp.py                                        # 1M steps, 4 envs
-caffeinate -disu python train_mlp.py --n-envs 4 --timesteps 500000 --tag v2
-caffeinate -disu python train_mlp.py --eval-only --load runs/sac_zi_v1/best_model
+venv/bin/python train_mlp.py                                        # 1M steps, 4 envs
+venv/bin/python train_mlp.py --n-envs 4 --timesteps 500000 --tag v2
+venv/bin/python train_mlp.py --eval-only --load runs/sac_zi_v1/best_model
 
 # TRON agent (custom R2D2)
-caffeinate -disu python train_tron.py                                       # 2M steps
-caffeinate -disu python train_tron.py --timesteps 5000 --tag smoke
-caffeinate -disu python train_tron.py --eval-only --load runs/tron_v1/best_model.pt
+venv/bin/python train_tron.py                                       # 2M steps
+venv/bin/python train_tron.py --timesteps 5000 --tag smoke
+venv/bin/python train_tron.py --eval-only --load runs/tron_v1/best_model.pt
 ```
 
 SAC outputs go to `runs/sac_zi_<tag>/` (SB3 `.zip`). R2D2 outputs go to `runs/tron_<tag>/` (PyTorch `.pt`).
 
+```bash
+# TRON2 agent (R2D2, episode-based replay)
+venv/bin/python train_tron2.py --env-tag B --ne-strategy 8 --tag envb_s8_v1 --episodes 3000000
+venv/bin/python train_tron2.py --env-tag C --ne-strategy 8 --tag envc_s8_v1 --episodes 3000000
+venv/bin/python eval_tron2.py --model runs/tron2_envb_s8_v1/best_model.pt --env-tag B --num-runs 1000
+```
+
+TRON2 outputs: `runs/tron2_<tag>/` (PyTorch `.pt` + `train_log.csv`). Use 1000+ eval runs — ZI profit std ≈ 10,000.
+
 ### Equilibrium Evaluation
 
-**IMPORTANT:** All equilibrium commands MUST be run with `caffeinate -disu` to prevent sleep interruptions.
-
 ```bash
-caffeinate -disu python equilibrium_mlp.py --model runs/sac_zi_v3_eq/best_model --num-runs 500
-caffeinate -disu python equilibrium_tron.py --model runs/tron_v1/best_model.pt --num-runs 500
+venv/bin/python equilibrium_mlp.py --model runs/sac_zi_v3_eq/best_model --num-runs 500
+venv/bin/python equilibrium_tron.py --model runs/tron_v1/best_model.pt --num-runs 500
 ```
 
 Both load ZI×ZI baseline from `equilibrium_results.csv` and add a new deviator column.
@@ -240,6 +243,7 @@ Both load ZI×ZI baseline from `equilibrium_results.csv` and add a new deviator 
 3. **Sparse lam warm-up**: With `lam=0.005`, use `warmup_fraction=0.0` and guarantee first RL arrival < `sim_time` by resampling in a while-loop in `reset_arrivals()`.
 4. **`deque` O(n) indexing in replay buffer**: Replaced with a list-based circular buffer (O(1) random access).
 5. **Cross-episode sequences**: With ~10 RL steps/episode and `seq_len=80`, sequences accumulate across episode boundaries instead of flushing+padding at each episode end.
+6. **TRON2 arrival resampling** (`tron2_env.py`): `_reset_arrivals()` loops until `arrival_times_rl[0] < sim_time`. Geometric draws can exceed sim_time (~50% for Env A λ=0.0005; rare but real for Env B). Original code raised `ValueError`, crashing training around ep 10K.
 
 ### Other Wrappers
 

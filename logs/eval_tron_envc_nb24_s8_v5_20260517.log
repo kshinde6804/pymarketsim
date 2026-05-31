@@ -1,0 +1,37 @@
+Evaluating TRON model(s) vs ZI S8 baseline in Env C
+  lam=0.012, pv_var=2.00e+07, n_bg=24
+  2000 episodes per model  |  12 processes
+  mode: paired
+
+Evaluating best_model ...
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+
+  Action distribution (200 episodes, 4862 steps):
+  Shade bins (top-10 by frequency):
+    [35] shade= 560.0   2309 ( 47.5%)  ██████████████
+    [ 6] shade= 240.0    178 (  3.7%)  █
+    [29] shade= 525.0    174 (  3.6%)  █
+    [23] shade= 495.0    127 (  2.6%)  
+    [30] shade= 530.0    100 (  2.1%)  
+    [ 9] shade= 360.0     95 (  2.0%)  
+    [38] shade= 580.0     87 (  1.8%)  
+    [20] shade= 480.0     86 (  1.8%)  
+    [37] shade= 573.3     77 (  1.6%)  
+    [ 8] shade= 320.0     77 (  1.6%)  
+  Eta bins:
+    [ 0] eta=0.500   4862 (100.0%)  ██████████████████████████████
+
+  No action collapse detected (top shade bin: 47.5%)
+  best_model: paired_advantage=-28.8 ± 56.1  t=-0.51  p=0.608  NE broken? no
+
+==========================================================================================
+Model                     Paired advantage   t-stat  p-value  NE broken?
+------------------------------------------------------------------------------------------
+best_model                       -28.8 ± 56.1    -0.51    0.608          no
+==========================================================================================
+
+Paired advantage = TRON profit − ZI-proxy profit on matched episodes.
+NE broken if t > 0 and p < 0.05 (one-sample t-test vs. H0: advantage=0).

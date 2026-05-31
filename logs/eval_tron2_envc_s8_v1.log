@@ -1,0 +1,20 @@
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Model:       runs/tron2_envc_s8_v1/best_model.pt
+Env:         C  |  strategy: S8
+Runs:        1000
+
+Running TRON2 episodes …
+Running ZI baseline episodes …
+───────────────────────────────────────────────────────
+TRON2 profit:       1268.70  ±  2442.53
+ZI baseline:        1300.20  ±  2451.30
+Advantage:           -31.50  (-2.4%)
+t-test p-value:  0.7736
+───────────────────────────────────────────────────────
+
+Paper Table 3 target (Env C):
+  TRON=1402,  ZI=1259,  gain=11%
+EXIT_CODE=0

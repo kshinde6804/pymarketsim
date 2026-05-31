@@ -1,0 +1,32 @@
+Learner device: cuda | Workers: 4
+Env C | strategy S8 | shade=[460, 540] eta=0.5
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Spawned 4 workers (PIDs: [3151185, 3151186, 3151187, 3151188])
+Training for 50,000 episodes (starting at 1) …
+ep    10,000 | ε=0.9810 | buf=10,000 | loss=0.00436 | 152 ep/s
+ep    20,000 | ε=0.9620 | buf=20,000 | loss=0.01068 | 152 ep/s
+ep    30,000 | ε=0.9430 | buf=30,000 | loss=0.00442 | 153 ep/s
+ep    40,000 | ε=0.9240 | buf=40,000 | loss=0.00586 | 154 ep/s
+ep    50,000 | ε=0.9050 | buf=50,000 | loss=0.01036 | 154 ep/s
+
+Final eval paired advantage (greedy, 500 runs): 6.0
+Models saved to runs/tron2_envc_s8_v2shadow/

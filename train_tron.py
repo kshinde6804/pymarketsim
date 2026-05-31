@@ -42,7 +42,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
+from scipy import stats as _stats
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -201,6 +203,7 @@ class SequenceReplayBuffer:
         done_seq: np.ndarray,
         h0: torch.Tensor,
         c0: torch.Tensor,
+        mask_seq: np.ndarray,
     ):
         entry = (
             obs_seq.astype(np.float32),
@@ -209,6 +212,7 @@ class SequenceReplayBuffer:
             done_seq.astype(bool),
             h0.squeeze(0).detach().cpu(),  # (1, hidden_dim)
             c0.squeeze(0).detach().cpu(),
+            mask_seq.astype(np.float32),  # (T,) 1=real, 0=padded
         )
         if len(self._buf) < self.capacity:
             self._buf.append(entry)
@@ -236,8 +240,9 @@ class SequenceReplayBuffer:
         dones = torch.tensor(np.stack([b[3] for b in batch]))
         h0    = torch.stack([b[4] for b in batch], dim=1)  # (1, B, H)
         c0    = torch.stack([b[5] for b in batch], dim=1)
+        mask  = torch.tensor(np.stack([b[6] for b in batch]))  # (B, T)
 
-        return obs, acts, rews, dones, h0, c0
+        return obs, acts, rews, dones, h0, c0, mask
 
 
 # ── Sequence collector ────────────────────────────────────────────────────────
@@ -298,12 +303,17 @@ class SequenceCollector:
         if n < self.seq_len and not pad_if_short:
             return None
 
+        n_real = min(n, self.seq_len)  # real steps before zero-padding
+
         # Pad short sequences with zeros (terminal padding)
         while len(self._obs) < self.seq_len:
             self._obs.append(np.zeros(self.obs_dim, dtype=np.float32))
             self._acts.append(np.zeros(2, dtype=np.int64))
             self._rews.append(0.0)
             self._done.append(True)
+
+        mask = np.zeros(self.seq_len, dtype=np.float32)
+        mask[:n_real] = 1.0
 
         seq = (
             np.stack(self._obs[:self.seq_len]),   # (T, D)
@@ -312,6 +322,7 @@ class SequenceCollector:
             np.array(self._done[:self.seq_len]),  # (T,)
             self._h0,
             self._c0,
+            mask,                                 # (T,) 1=real, 0=padded
         )
         self._reset_buffers()
         return seq
@@ -469,18 +480,20 @@ class R2D2Trainer:
         if len(buffer) < self.batch_size:
             return None
 
-        obs, acts, rews, dones, h0, c0 = buffer.sample(self.batch_size)
+        obs, acts, rews, dones, h0, c0, mask = buffer.sample(self.batch_size)
         # obs:   (B, T, D)
         # acts:  (B, T, 2)
         # rews:  (B, T)
         # dones: (B, T)
         # h0/c0: (1, B, H)
+        # mask:  (B, T) 1=real step, 0=zero-padded
         obs   = obs.to(self.device)
         acts  = acts.to(self.device)
         rews  = rews.to(self.device)
         dones = dones.to(self.device)
         h0    = h0.to(self.device)
         c0    = c0.to(self.device)
+        mask  = mask.to(self.device)
 
         B, T, D = obs.shape
         learn_len = T - self.burnin  # steps for which we compute loss
@@ -578,16 +591,24 @@ class R2D2Trainer:
                 )
             # Steps [n_boot:]: shade_target/eta_target already = n_returns from clone
 
-        # ── Loss ──────────────────────────────────────────────────────────
-        loss_shade = self.loss_fn(Q_shade_taken, shade_target.detach())
-        loss_eta   = self.loss_fn(Q_eta_taken,   eta_target.detach())
+        # ── Loss (masked to exclude zero-padded steps) ────────────────────
+        # mask_learn: 1.0 for real steps, 0.0 for zero-padded steps added by flush()
+        mask_learn = mask[:, self.burnin:]  # (B, learn_len)
+        n_real = mask_learn.sum().clamp(min=1.0)
 
-        # Entropy bonus — prevents action-space collapse (Fix G)
+        td_shade = F.smooth_l1_loss(Q_shade_taken, shade_target.detach(), reduction='none')
+        td_eta   = F.smooth_l1_loss(Q_eta_taken,   eta_target.detach(), reduction='none')
+        loss_shade = (mask_learn * td_shade).sum() / n_real
+        loss_eta   = (mask_learn * td_eta).sum() / n_real
+
+        # Entropy bonus (Q tensors are detached so this is display-only; no grad flows)
         if self.entropy_coef > 0.0:
             shade_log_probs = torch.log_softmax(Q_shade_online.detach(), dim=-1)
             eta_log_probs   = torch.log_softmax(Q_eta_online.detach(), dim=-1)
-            ent_shade = -(torch.exp(shade_log_probs) * shade_log_probs).sum(-1).mean()
-            ent_eta   = -(torch.exp(eta_log_probs)   * eta_log_probs).sum(-1).mean()
+            ent_shade = -(torch.exp(shade_log_probs) * shade_log_probs).sum(-1)
+            ent_eta   = -(torch.exp(eta_log_probs)   * eta_log_probs).sum(-1)
+            ent_shade = (mask_learn * ent_shade).sum() / n_real
+            ent_eta   = (mask_learn * ent_eta).sum() / n_real
             loss = loss_shade + loss_eta - self.entropy_coef * (ent_shade + ent_eta)
         else:
             loss = loss_shade + loss_eta
@@ -627,11 +648,12 @@ def evaluate(
     policy: TRONPolicy,
     n_episodes: int = EVAL_EPISODES,
     device: Optional[torch.device] = None,
-) -> Tuple[float, float]:
+) -> Tuple[float, float, float, float]:
     """Roll out the greedy policy deterministically.
 
     Returns:
-        (mean_reward, std_reward) over n_episodes episodes.
+        (mean_reward, std_reward, t_stat, p_val) over n_episodes episodes.
+        t_stat and p_val are from a one-sample t-test against H0: mean=0.
     """
     device = device or DEVICE
     policy = policy.to(device)
@@ -659,7 +681,11 @@ def evaluate(
 
         rewards.append(ep_reward)
 
-    return float(np.mean(rewards)), float(np.std(rewards))
+    rewards_arr = np.array(rewards)
+    mean_r = float(np.mean(rewards_arr))
+    std_r  = float(np.std(rewards_arr))
+    t_stat, p_val = _stats.ttest_1samp(rewards_arr, 0.0)
+    return mean_r, std_r, float(t_stat), float(p_val)
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -841,7 +867,7 @@ def train(args, device: torch.device):
 
         # Evaluate
         if step >= next_eval:
-            mean_r, std_r = evaluate(trainer.online, device=device)
+            mean_r, std_r, t_stat, p_val = evaluate(trainer.online, device=device)
             elapsed = (time.time() - t0) / 60
             # Fix A: rolling window checkpoint selection
             eval_window.append(mean_r)
@@ -851,15 +877,18 @@ def train(args, device: torch.device):
                 best_rolling = rolling
                 trainer.save(best_model_path)
                 saved = "  *saved*"
+            sig = "★" if (t_stat > 0 and p_val < 0.05) else ""
             print(
                 f"  step={step:>8,}  eval={mean_r:+.3f}±{std_r:.3f}"
+                f"  t={t_stat:.2f}  p={p_val:.3f}{sig}"
                 f"  roll={rolling:+.3f}"
                 f"  eps={trainer.epsilon:.3f}"
                 f"  loss={np.mean(losses[-100:]) if losses else 0:.4f}"
                 f"  {elapsed:.1f}min{saved}"
             )
             with open(eval_csv, "a", newline="") as f:
-                csv.writer(f).writerow([step, f"{mean_r:.4f}", f"{std_r:.4f}", f"{rolling:.4f}"])
+                csv.writer(f).writerow([step, f"{mean_r:.4f}", f"{std_r:.4f}", f"{rolling:.4f}",
+                                        f"{t_stat:.4f}", f"{p_val:.4f}"])
 
             next_eval += EVAL_FREQ
 
@@ -885,8 +914,9 @@ def eval_only(args, device: torch.device):
     policy.eval()
 
     n = args.eval_episodes
-    mean_r, std_r = evaluate(policy, n_episodes=n, device=device)
-    print(f"Eval ({n} episodes): mean={mean_r:+.4f}  std={std_r:.4f}")
+    mean_r, std_r, t_stat, p_val = evaluate(policy, n_episodes=n, device=device)
+    sig = " ★ (p<0.05)" if (t_stat > 0 and p_val < 0.05) else ""
+    print(f"Eval ({n} episodes): mean={mean_r:+.4f}  std={std_r:.4f}  t={t_stat:.2f}  p={p_val:.4f}{sig}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

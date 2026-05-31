@@ -1,0 +1,159 @@
+Learner device: cuda | Workers: 8
+Loaded weights from runs/tron2_envc_s8_v1par/latest_model.pt
+Env C | strategy S8 | shade=[460, 540] eta=0.5
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Spawned 8 workers (PIDs: [1649933, 1649934, 1649935, 1649936, 1649937, 1649938, 1649939, 1649940])
+Training for 3,000,000 episodes (starting at 1,880,001) …
+ep 1,890,000 | ε=0.0500 | buf=10,000 | loss=0.00530 | 151 ep/s
+  [ep 1,900,000] new best eval profit: 1311.4
+ep 1,900,000 | ε=0.0500 | buf=20,000 | loss=0.00808 | 141 ep/s
+ep 1,910,000 | ε=0.0500 | buf=30,000 | loss=0.00895 | 143 ep/s
+ep 1,920,000 | ε=0.0500 | buf=40,000 | loss=0.00804 | 145 ep/s
+ep 1,930,000 | ε=0.0500 | buf=50,000 | loss=0.00793 | 146 ep/s
+ep 1,940,000 | ε=0.0500 | buf=50,000 | loss=0.02010 | 147 ep/s
+ep 1,950,000 | ε=0.0500 | buf=50,000 | loss=0.00668 | 148 ep/s
+ep 1,960,000 | ε=0.0500 | buf=50,000 | loss=0.01506 | 148 ep/s
+ep 1,970,000 | ε=0.0500 | buf=50,000 | loss=0.00788 | 147 ep/s
+ep 1,980,000 | ε=0.0500 | buf=50,000 | loss=0.01083 | 147 ep/s
+ep 1,990,000 | ε=0.0500 | buf=50,000 | loss=0.00733 | 147 ep/s
+ep 2,000,000 | ε=0.0500 | buf=50,000 | loss=0.01370 | 145 ep/s
+ep 2,010,000 | ε=0.0500 | buf=50,000 | loss=0.00969 | 145 ep/s
+ep 2,020,000 | ε=0.0500 | buf=50,000 | loss=0.00956 | 145 ep/s
+ep 2,030,000 | ε=0.0500 | buf=50,000 | loss=0.01312 | 145 ep/s
+ep 2,040,000 | ε=0.0500 | buf=50,000 | loss=0.00654 | 146 ep/s
+ep 2,050,000 | ε=0.0500 | buf=50,000 | loss=0.00865 | 146 ep/s
+ep 2,060,000 | ε=0.0500 | buf=50,000 | loss=0.00655 | 146 ep/s
+ep 2,070,000 | ε=0.0500 | buf=50,000 | loss=0.01029 | 146 ep/s
+ep 2,080,000 | ε=0.0500 | buf=50,000 | loss=0.00982 | 146 ep/s
+ep 2,090,000 | ε=0.0500 | buf=50,000 | loss=0.00771 | 146 ep/s
+  [ep 2,100,000] new best eval profit: 1500.3
+ep 2,100,000 | ε=0.0500 | buf=50,000 | loss=0.01225 | 146 ep/s
+ep 2,110,000 | ε=0.0500 | buf=50,000 | loss=0.00654 | 146 ep/s
+ep 2,120,000 | ε=0.0500 | buf=50,000 | loss=0.00355 | 146 ep/s
+ep 2,130,000 | ε=0.0500 | buf=50,000 | loss=0.00401 | 146 ep/s
+ep 2,140,000 | ε=0.0500 | buf=50,000 | loss=0.00989 | 146 ep/s
+ep 2,150,000 | ε=0.0500 | buf=50,000 | loss=0.00700 | 146 ep/s
+ep 2,160,000 | ε=0.0500 | buf=50,000 | loss=0.01080 | 146 ep/s
+ep 2,170,000 | ε=0.0500 | buf=50,000 | loss=0.00820 | 146 ep/s
+ep 2,180,000 | ε=0.0500 | buf=50,000 | loss=0.00927 | 146 ep/s
+ep 2,190,000 | ε=0.0500 | buf=50,000 | loss=0.01095 | 146 ep/s
+ep 2,200,000 | ε=0.0500 | buf=50,000 | loss=0.01361 | 146 ep/s
+ep 2,210,000 | ε=0.0500 | buf=50,000 | loss=0.00639 | 146 ep/s
+ep 2,220,000 | ε=0.0500 | buf=50,000 | loss=0.00598 | 146 ep/s
+ep 2,230,000 | ε=0.0500 | buf=50,000 | loss=0.00597 | 146 ep/s
+ep 2,240,000 | ε=0.0500 | buf=50,000 | loss=0.00633 | 146 ep/s
+ep 2,250,000 | ε=0.0500 | buf=50,000 | loss=0.02110 | 146 ep/s
+ep 2,260,000 | ε=0.0500 | buf=50,000 | loss=0.00341 | 146 ep/s
+ep 2,270,000 | ε=0.0500 | buf=50,000 | loss=0.00929 | 146 ep/s
+ep 2,280,000 | ε=0.0500 | buf=50,000 | loss=0.00958 | 146 ep/s
+ep 2,290,000 | ε=0.0500 | buf=50,000 | loss=0.00667 | 146 ep/s
+ep 2,300,000 | ε=0.0500 | buf=50,000 | loss=0.00594 | 146 ep/s
+ep 2,310,000 | ε=0.0500 | buf=50,000 | loss=0.00895 | 146 ep/s
+ep 2,320,000 | ε=0.0500 | buf=50,000 | loss=0.00957 | 146 ep/s
+ep 2,330,000 | ε=0.0500 | buf=50,000 | loss=0.00630 | 146 ep/s
+ep 2,340,000 | ε=0.0500 | buf=50,000 | loss=0.00578 | 146 ep/s
+ep 2,350,000 | ε=0.0500 | buf=50,000 | loss=0.00870 | 146 ep/s
+ep 2,360,000 | ε=0.0500 | buf=50,000 | loss=0.01020 | 146 ep/s
+ep 2,370,000 | ε=0.0500 | buf=50,000 | loss=0.00870 | 146 ep/s
+ep 2,380,000 | ε=0.0500 | buf=50,000 | loss=0.00673 | 146 ep/s
+ep 2,390,000 | ε=0.0500 | buf=50,000 | loss=0.00782 | 146 ep/s
+ep 2,400,000 | ε=0.0500 | buf=50,000 | loss=0.01142 | 146 ep/s
+ep 2,410,000 | ε=0.0500 | buf=50,000 | loss=0.00294 | 146 ep/s
+ep 2,420,000 | ε=0.0500 | buf=50,000 | loss=0.00622 | 146 ep/s
+ep 2,430,000 | ε=0.0500 | buf=50,000 | loss=0.00907 | 146 ep/s
+ep 2,440,000 | ε=0.0500 | buf=50,000 | loss=0.00853 | 146 ep/s
+ep 2,450,000 | ε=0.0500 | buf=50,000 | loss=0.01260 | 146 ep/s
+ep 2,460,000 | ε=0.0500 | buf=50,000 | loss=0.01162 | 146 ep/s
+ep 2,470,000 | ε=0.0500 | buf=50,000 | loss=0.01066 | 146 ep/s
+ep 2,480,000 | ε=0.0500 | buf=50,000 | loss=0.00825 | 146 ep/s
+ep 2,490,000 | ε=0.0500 | buf=50,000 | loss=0.00447 | 146 ep/s
+ep 2,500,000 | ε=0.0500 | buf=50,000 | loss=0.01026 | 146 ep/s
+ep 2,510,000 | ε=0.0500 | buf=50,000 | loss=0.01050 | 146 ep/s
+ep 2,520,000 | ε=0.0500 | buf=50,000 | loss=0.00799 | 146 ep/s
+ep 2,530,000 | ε=0.0500 | buf=50,000 | loss=0.01427 | 146 ep/s
+ep 2,540,000 | ε=0.0500 | buf=50,000 | loss=0.00690 | 146 ep/s
+ep 2,550,000 | ε=0.0500 | buf=50,000 | loss=0.01437 | 146 ep/s
+ep 2,560,000 | ε=0.0500 | buf=50,000 | loss=0.00789 | 146 ep/s
+ep 2,570,000 | ε=0.0500 | buf=50,000 | loss=0.01045 | 146 ep/s
+ep 2,580,000 | ε=0.0500 | buf=50,000 | loss=0.00765 | 146 ep/s
+ep 2,590,000 | ε=0.0500 | buf=50,000 | loss=0.01314 | 146 ep/s
+ep 2,600,000 | ε=0.0500 | buf=50,000 | loss=0.01568 | 146 ep/s
+ep 2,610,000 | ε=0.0500 | buf=50,000 | loss=0.00739 | 146 ep/s
+ep 2,620,000 | ε=0.0500 | buf=50,000 | loss=0.00755 | 146 ep/s
+ep 2,630,000 | ε=0.0500 | buf=50,000 | loss=0.00688 | 146 ep/s
+ep 2,640,000 | ε=0.0500 | buf=50,000 | loss=0.00880 | 146 ep/s
+ep 2,650,000 | ε=0.0500 | buf=50,000 | loss=0.00809 | 146 ep/s
+ep 2,660,000 | ε=0.0500 | buf=50,000 | loss=0.00955 | 146 ep/s
+ep 2,670,000 | ε=0.0500 | buf=50,000 | loss=0.01376 | 146 ep/s
+ep 2,680,000 | ε=0.0500 | buf=50,000 | loss=0.00713 | 146 ep/s
+ep 2,690,000 | ε=0.0500 | buf=50,000 | loss=0.01038 | 146 ep/s
+ep 2,700,000 | ε=0.0500 | buf=50,000 | loss=0.00522 | 146 ep/s
+ep 2,710,000 | ε=0.0500 | buf=50,000 | loss=0.00853 | 146 ep/s
+ep 2,720,000 | ε=0.0500 | buf=50,000 | loss=0.00608 | 146 ep/s
+ep 2,730,000 | ε=0.0500 | buf=50,000 | loss=0.01069 | 146 ep/s
+ep 2,740,000 | ε=0.0500 | buf=50,000 | loss=0.01237 | 146 ep/s
+ep 2,750,000 | ε=0.0500 | buf=50,000 | loss=0.01166 | 146 ep/s
+ep 2,760,000 | ε=0.0500 | buf=50,000 | loss=0.00787 | 146 ep/s
+ep 2,770,000 | ε=0.0500 | buf=50,000 | loss=0.00327 | 146 ep/s
+ep 2,780,000 | ε=0.0500 | buf=50,000 | loss=0.00880 | 146 ep/s
+ep 2,790,000 | ε=0.0500 | buf=50,000 | loss=0.00818 | 146 ep/s
+ep 2,800,000 | ε=0.0500 | buf=50,000 | loss=0.00302 | 146 ep/s
+ep 2,810,000 | ε=0.0500 | buf=50,000 | loss=0.00653 | 146 ep/s
+ep 2,820,000 | ε=0.0500 | buf=50,000 | loss=0.00665 | 146 ep/s
+ep 2,830,000 | ε=0.0500 | buf=50,000 | loss=0.00652 | 146 ep/s
+ep 2,840,000 | ε=0.0500 | buf=50,000 | loss=0.00577 | 146 ep/s
+ep 2,850,000 | ε=0.0500 | buf=50,000 | loss=0.00586 | 146 ep/s
+ep 2,860,000 | ε=0.0500 | buf=50,000 | loss=0.00510 | 146 ep/s
+ep 2,870,000 | ε=0.0500 | buf=50,000 | loss=0.01001 | 146 ep/s
+ep 2,880,000 | ε=0.0500 | buf=50,000 | loss=0.00629 | 146 ep/s
+ep 2,890,000 | ε=0.0500 | buf=50,000 | loss=0.00988 | 146 ep/s
+ep 2,900,000 | ε=0.0500 | buf=50,000 | loss=0.00578 | 146 ep/s
+ep 2,910,000 | ε=0.0500 | buf=50,000 | loss=0.00960 | 146 ep/s
+ep 2,920,000 | ε=0.0500 | buf=50,000 | loss=0.00739 | 146 ep/s
+ep 2,930,000 | ε=0.0500 | buf=50,000 | loss=0.00696 | 146 ep/s
+ep 2,940,000 | ε=0.0500 | buf=50,000 | loss=0.01058 | 146 ep/s
+ep 2,950,000 | ε=0.0500 | buf=50,000 | loss=0.00657 | 146 ep/s
+ep 2,960,000 | ε=0.0500 | buf=50,000 | loss=0.00559 | 146 ep/s
+ep 2,970,000 | ε=0.0500 | buf=50,000 | loss=0.01326 | 146 ep/s
+ep 2,980,000 | ε=0.0500 | buf=50,000 | loss=0.00584 | 146 ep/s
+ep 2,990,000 | ε=0.0500 | buf=50,000 | loss=0.00810 | 146 ep/s
+  [ep 3,000,000] new best eval profit: 1557.5
+ep 3,000,000 | ε=0.0500 | buf=50,000 | loss=0.00668 | 146 ep/s
+
+Final eval profit (greedy, 200 runs): 1417.8
+Models saved to runs/tron2_envc_s8_v1par/

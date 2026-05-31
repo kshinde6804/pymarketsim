@@ -1,0 +1,19 @@
+Job ID: 50538522
+Node:   gl1008
+GPU:    0
+Env:    B | Strategy: S8 | Tag: envb_s8_v1 | Episodes: 3000000
+Device: cuda
+Env B | strategy S8 | shade=[460, 540] eta=0.5
+Training for 3,000,000 episodes …
+Traceback (most recent call last):
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 393, in <module>
+    train(args)
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 295, in train
+    next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 224, in step
+    self._rl_agent_step(shade, eta)
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 361, in _rl_agent_step
+    self.arrivals[self.time + 1 + gap].append(self.rl_agent_id)
+    ^^^^^^^^^^^^^
+AttributeError: 'TRONEnv2' object has no attribute 'arrivals'

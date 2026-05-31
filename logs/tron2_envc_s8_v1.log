@@ -1,0 +1,79 @@
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Device: cuda
+Env C | strategy S8 | shade=[460, 540] eta=0.5
+Loaded weights from runs/tron2_envc_s8_v1/latest_model.pt
+Training for 3,000,000 episodes (starting at 990,001) …
+Traceback (most recent call last):
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 403, in <module>
+    train(args)
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 303, in train
+    next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 224, in step
+    self._rl_agent_step(shade, eta)
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 361, in _rl_agent_step
+    self.arrivals[self.time + 1 + gap].append(self.rl_agent_id)
+    ^^^^^^^^^^^^^
+AttributeError: 'TRONEnv2' object has no attribute 'arrivals'
+EXIT_CODE=0
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Device: cuda
+Env C | strategy S8 | shade=[460, 540] eta=0.5
+Loaded weights from runs/tron2_envc_s8_v1/latest_model.pt
+Training for 3,000,000 episodes (starting at 990,001) …
+Traceback (most recent call last):
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 403, in <module>
+    train(args)
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 303, in train
+    next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 224, in step
+    self._rl_agent_step(shade, eta)
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 361, in _rl_agent_step
+    self.arrivals[self.time + 1 + gap].append(self.rl_agent_id)
+    ^^^^^^^^^^^^^
+AttributeError: 'TRONEnv2' object has no attribute 'arrivals'
+EXIT_CODE=0
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+Device: cuda
+Env C | strategy S8 | shade=[460, 540] eta=0.5
+Loaded weights from runs/tron2_envc_s8_v1/latest_model.pt
+Training for 3,000,000 episodes (starting at 990,001) …
+Traceback (most recent call last):
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 403, in <module>
+    train(args)
+  File "/home/kshinde/ondemand/pymarketsim/train_tron2.py", line 303, in train
+    next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 224, in step
+    self._rl_agent_step(shade, eta)
+  File "/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/tron2_env.py", line 361, in _rl_agent_step
+    self.arrivals[self.time + 1 + gap].append(self.rl_agent_id)
+    ^^^^^^^^^^^^^
+AttributeError: 'TRONEnv2' object has no attribute 'arrivals'
+EXIT_CODE=0
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:71: RuntimeWarning: invalid value encountered in scalar divide
+  up = deltas[deltas >= 0].sum() / len(midprices)
+/home/kshinde/ondemand/pymarketsim/marketsim/wrappers/metrics.py:72: RuntimeWarning: invalid value encountered in scalar divide
+  down = -deltas[deltas < 0].sum() / len(midprices)
