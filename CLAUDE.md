@@ -219,13 +219,17 @@ venv/bin/python train_tron.py --eval-only --load runs/tron_v1/best_model.pt
 SAC outputs go to `runs/sac_zi_<tag>/` (SB3 `.zip`). R2D2 outputs go to `runs/tron_<tag>/` (PyTorch `.pt`).
 
 ```bash
-# TRON2 agent (R2D2, episode-based replay)
-venv/bin/python train_tron2.py --env-tag B --ne-strategy 8 --tag envb_s8_v1 --episodes 3000000
-venv/bin/python train_tron2.py --env-tag C --ne-strategy 8 --tag envc_s8_v1 --episodes 3000000
+# TRON2 agent (R2D2, episode-based replay) — always use --n-workers 16 on HPC
+venv/bin/python train_tron2.py --env-tag B --ne-strategy 8 --tag envb_s8_v1 --episodes 3000000 --n-workers 16
+venv/bin/python train_tron2.py --env-tag C --ne-strategy 8 --tag envc_s8_v1 --episodes 3000000 --n-workers 16
+# Resume from checkpoint:
+venv/bin/python train_tron2.py --env-tag C --ne-strategy 8 --tag envc_s8_v1 --episodes 3000000 \
+  --start-episode 1050001 --load runs/tron2_envc_s8_v1/latest_model.pt --n-workers 16
 venv/bin/python eval_tron2.py --model runs/tron2_envb_s8_v1/best_model.pt --env-tag B --num-runs 1000
 ```
 
 TRON2 outputs: `runs/tron2_<tag>/` (PyTorch `.pt` + `train_log.csv`). Use 1000+ eval runs — ZI profit std ≈ 10,000.
+`--n-workers 1` for serial/debug mode; default 16 for HPC (40 CPUs, V100 GPU).
 
 ### Equilibrium Evaluation
 

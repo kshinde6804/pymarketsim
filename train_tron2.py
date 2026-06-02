@@ -17,12 +17,15 @@ Usage:
 import argparse
 import copy
 import csv
+import io
 import os
+import queue
 import random
 import time
 
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -43,9 +46,10 @@ GRAD_CLIP       = 10.0      # matches Dueling DQN §4.2 and train_tron.py (was 4
 EPS_START       = 1.0
 EPS_END         = 0.05
 EPS_DECAY_EPS   = 500_000   # episodes over which ε decays linearly
-EVAL_FREQ       = 100_000   # episodes between checkpoint evals
-EVAL_RUNS       = 200       # simulations per checkpoint eval
-LOG_FREQ        = 10_000    # episodes between log prints
+EVAL_FREQ             = 100_000   # episodes between checkpoint evals
+EVAL_RUNS             = 500       # simulations per checkpoint eval (parallel eval makes this cheap)
+LOG_FREQ              = 10_000    # episodes between log prints
+WEIGHT_BROADCAST_FREQ = 200       # learner→worker weight sync every N episodes
 
 
 # ── Replay buffer ──────────────────────────────────────────────────────────────
@@ -199,11 +203,81 @@ def compute_loss(batch, online_net, target_net, gamma, n_step, device):
     return loss_shade + loss_eta
 
 
+# ── Worker (parallel episode collection) ───────────────────────────────────────
+
+def _worker_fn(worker_id, rollout_q, weights_q, env_tag, ne_strategy, base_seed):
+    """Episode collection worker. Always runs on CPU."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    torch.set_num_threads(1)
+
+    seed = base_seed + worker_id
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    env    = TRONEnv2(env_tag=env_tag, ne_strategy=ne_strategy)
+    policy = TRONPolicy2(input_dim=14, hidden_dim=HIDDEN_DIM)
+    policy.eval()
+
+    msg = weights_q.get()
+    if msg is None:
+        return
+    state_dict, epsilon = msg
+    policy.load_state_dict(state_dict)
+
+    while True:
+        try:
+            msg = weights_q.get_nowait()
+            if msg is None:
+                break
+            state_dict, epsilon = msg
+            policy.load_state_dict(state_dict)
+        except queue.Empty:
+            pass
+
+        obs, _ = env.reset()
+        h_c    = None
+        ep_obs, ep_actions, ep_rewards, ep_dones = [], [], [], []
+        done   = False
+
+        while not done:
+            if random.random() < epsilon:
+                shade_idx = random.randint(0, N_SHADE - 1)
+                eta_idx   = random.randint(0, N_ETA - 1)
+            else:
+                obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+                with torch.no_grad():
+                    Q_shade, Q_eta, h_c = policy(obs_t, h_c)
+                shade_idx = int(Q_shade.squeeze().argmax().item())
+                eta_idx   = int(Q_eta.squeeze().argmax().item())
+
+            next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+            done = terminated or truncated
+            ep_obs.append(obs)
+            ep_actions.append([shade_idx, eta_idx])
+            ep_rewards.append(reward)
+            ep_dones.append(done)
+            obs = next_obs
+
+        rollout_q.put({
+            "obs":     np.array(ep_obs,     dtype=np.float32),
+            "actions": np.array(ep_actions, dtype=np.int64),
+            "rewards": np.array(ep_rewards, dtype=np.float32),
+            "dones":   np.array(ep_dones,   dtype=bool),
+        }, block=True)
+
+
 # ── Evaluation ─────────────────────────────────────────────────────────────────
 
-def evaluate(policy, env_tag, ne_strategy, n_runs, device):
-    """Run n_runs greedy episodes; return mean raw profit."""
-    env    = TRONEnv2(env_tag=env_tag, ne_strategy=ne_strategy)
+def evaluate(policy, env_tag, ne_strategy, n_runs, device, n_workers=1):
+    """Run n_runs greedy episodes serially; return mean raw profit."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    env = TRONEnv2(env_tag=env_tag, ne_strategy=ne_strategy)
     policy.eval()
     profits = []
 
@@ -211,16 +285,13 @@ def evaluate(policy, env_tag, ne_strategy, n_runs, device):
         obs, _ = env.reset()
         h_c    = None
         done   = False
-
         while not done:
             obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
             with torch.no_grad():
                 Q_shade, Q_eta, h_c = policy(obs_t, h_c)
-            shade_idx = int(Q_shade.squeeze().argmax().item())
-            eta_idx   = int(Q_eta.squeeze().argmax().item())
-            obs, _, terminated, truncated, _ = env.step([shade_idx, eta_idx])
+            obs, _, terminated, truncated, _ = env.step(
+                [int(Q_shade.squeeze().argmax()), int(Q_eta.squeeze().argmax())])
             done = terminated or truncated
-
         profits.append(env.get_episode_profit())
 
     policy.train()
@@ -235,21 +306,19 @@ def train(args):
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+    n_workers = max(1, args.n_workers)
+    print(f"Device: {device} | Workers: {n_workers}")
 
-    # Output directory
     save_dir = os.path.join("runs", f"tron2_{args.tag}")
     os.makedirs(save_dir, exist_ok=True)
     log_path = os.path.join(save_dir, "train_log.csv")
 
-    # Environment
-    env = TRONEnv2(env_tag=args.env_tag, ne_strategy=args.ne_strategy)
-    print(
-        f"Env {args.env_tag} | strategy S{args.ne_strategy} "
-        f"| shade={env.bg_shade} eta={env.bg_eta}"
-    )
+    # Print env config (ephemeral instance — do not reuse)
+    _env = TRONEnv2(env_tag=args.env_tag, ne_strategy=args.ne_strategy)
+    print(f"Env {args.env_tag} | strategy S{args.ne_strategy} "
+          f"| shade={_env.bg_shade} eta={_env.bg_eta}")
+    del _env
 
-    # Networks
     online_net = TRONPolicy2(input_dim=14, hidden_dim=HIDDEN_DIM).to(device)
     target_net = copy.deepcopy(online_net).to(device)
     target_net.eval()
@@ -257,7 +326,6 @@ def train(args):
     optimizer = torch.optim.Adam(online_net.parameters(), lr=LR)
     buffer    = EpisodeReplayBuffer(capacity=REPLAY_CAPACITY)
 
-    # ε schedule
     eps_step    = (EPS_START - EPS_END) / EPS_DECAY_EPS
     start_ep    = args.start_episode
     epsilon     = max(EPS_END, EPS_START - eps_step * (start_ep - 1))
@@ -271,62 +339,105 @@ def train(args):
 
     log_mode = "a" if start_ep > 1 else "w"
     with open(log_path, log_mode, newline="") as f:
-        writer = csv.writer(f)
         if log_mode == "w":
-            writer.writerow(["episode", "epsilon", "loss", "eval_profit"])
+            csv.writer(f).writerow(["episode", "epsilon", "loss", "eval_profit"])
+
+    # ── Spawn workers (parallel mode) ─────────────────────────────────────────
+    rollout_q, weights_qs, worker_procs = None, [], []
+    serial_env = None
+    last_broadcast_ep = start_ep
+
+    if n_workers > 1:
+        ctx       = mp.get_context("spawn")
+        rollout_q = ctx.Queue(maxsize=4 * n_workers)
+        weights_qs = [ctx.Queue(maxsize=1) for _ in range(n_workers)]
+        for wid in range(n_workers):
+            p = ctx.Process(
+                target=_worker_fn,
+                args=(wid, rollout_q, weights_qs[wid],
+                      args.env_tag, args.ne_strategy, args.seed),
+                daemon=True,
+            )
+            p.start()
+            worker_procs.append(p)
+        print(f"Spawned {n_workers} workers (PIDs: {[p.pid for p in worker_procs]})")
+        initial_sd = {k: v.detach().cpu().clone() for k, v in online_net.state_dict().items()}
+        for wq in weights_qs:
+            wq.put((initial_sd, epsilon))
+    else:
+        serial_env = TRONEnv2(env_tag=args.env_tag, ne_strategy=args.ne_strategy)
 
     t0 = time.time()
     print(f"Training for {args.episodes:,} episodes (starting at {start_ep:,}) …")
 
-    for ep in range(start_ep, args.episodes + 1):
+    ep = start_ep
+    while ep <= args.episodes:
         # ── Collect one episode ────────────────────────────────────────────────
-        obs, _ = env.reset()
-        h_c    = None
-        ep_obs, ep_actions, ep_rewards, ep_dones = [], [], [], []
-        done   = False
+        if n_workers > 1:
+            try:
+                rollout = rollout_q.get(timeout=1.0)
+            except queue.Empty:
+                if not any(p.is_alive() for p in worker_procs):
+                    print("ERROR: all workers died. Aborting.")
+                    break
+                continue
+            buffer.add(rollout["obs"], rollout["actions"],
+                       rollout["rewards"], rollout["dones"])
+        else:
+            obs, _ = serial_env.reset()
+            h_c    = None
+            ep_obs, ep_actions, ep_rewards, ep_dones = [], [], [], []
+            done   = False
+            while not done:
+                if random.random() < epsilon:
+                    shade_idx = random.randint(0, N_SHADE - 1)
+                    eta_idx   = random.randint(0, N_ETA - 1)
+                else:
+                    obs_t = (torch.tensor(obs, dtype=torch.float32)
+                             .unsqueeze(0).unsqueeze(0).to(device))
+                    with torch.no_grad():
+                        Q_shade, Q_eta, h_c = online_net(obs_t, h_c)
+                    shade_idx = int(Q_shade.squeeze().argmax().item())
+                    eta_idx   = int(Q_eta.squeeze().argmax().item())
+                next_obs, reward, terminated, truncated, _ = serial_env.step([shade_idx, eta_idx])
+                done = terminated or truncated
+                ep_obs.append(obs)
+                ep_actions.append([shade_idx, eta_idx])
+                ep_rewards.append(reward)
+                ep_dones.append(done)
+                obs = next_obs
+            buffer.add(ep_obs, ep_actions, ep_rewards, ep_dones)
 
-        while not done:
-            if random.random() < epsilon:
-                shade_idx = random.randint(0, N_SHADE - 1)
-                eta_idx   = random.randint(0, N_ETA - 1)
-            else:
-                obs_t = (
-                    torch.tensor(obs, dtype=torch.float32)
-                    .unsqueeze(0).unsqueeze(0).to(device)
-                )
-                with torch.no_grad():
-                    Q_shade, Q_eta, h_c = online_net(obs_t, h_c)
-                shade_idx = int(Q_shade.squeeze().argmax().item())
-                eta_idx   = int(Q_eta.squeeze().argmax().item())
-
-            next_obs, reward, terminated, truncated, _ = env.step([shade_idx, eta_idx])
-            done = terminated or truncated
-
-            ep_obs.append(obs)
-            ep_actions.append([shade_idx, eta_idx])
-            ep_rewards.append(reward)
-            ep_dones.append(done)
-            obs = next_obs
-
-        buffer.add(ep_obs, ep_actions, ep_rewards, ep_dones)
-        epsilon = max(EPS_END, epsilon - eps_step)
+        epsilon = max(EPS_END, EPS_START - eps_step * (ep - 1))
 
         # ── Learn ─────────────────────────────────────────────────────────────
         loss_val = float("nan")
         if len(buffer) >= MIN_BUFFER_EPS:
-            batch     = buffer.sample(BATCH_SIZE, device)
-            loss      = compute_loss(batch, online_net, target_net, GAMMA, N_STEP, device)
+            batch    = buffer.sample(BATCH_SIZE, device)
+            loss     = compute_loss(batch, online_net, target_net, GAMMA, N_STEP, device)
             optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(online_net.parameters(), GRAD_CLIP)
             optimizer.step()
-            loss_val = loss.item()
+            loss_val  = loss.item()
             grad_step += 1
-
-            # Polyak soft target update every gradient step
             with torch.no_grad():
                 for p_on, p_tgt in zip(online_net.parameters(), target_net.parameters()):
                     p_tgt.data.mul_(1.0 - TAU).add_(TAU * p_on.data)
+
+        # ── Broadcast weights to workers ───────────────────────────────────────
+        if n_workers > 1 and (ep - last_broadcast_ep) >= WEIGHT_BROADCAST_FREQ:
+            cpu_sd = {k: v.detach().cpu().clone() for k, v in online_net.state_dict().items()}
+            for wq in weights_qs:
+                try:
+                    wq.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    wq.put_nowait((cpu_sd, epsilon))
+                except queue.Full:
+                    pass
+            last_broadcast_ep = ep
 
         # ── Save latest ────────────────────────────────────────────────────────
         if ep % LOG_FREQ == 0:
@@ -335,7 +446,8 @@ def train(args):
         # ── Periodic eval & checkpoint ─────────────────────────────────────────
         eval_profit = float("nan")
         if ep % EVAL_FREQ == 0:
-            eval_profit = evaluate(online_net, args.env_tag, args.ne_strategy, EVAL_RUNS, device)
+            eval_profit = evaluate(online_net, args.env_tag, args.ne_strategy,
+                                   EVAL_RUNS, device)
             if eval_profit > best_profit:
                 best_profit = eval_profit
                 torch.save(online_net.state_dict(), os.path.join(save_dir, "best_model.pt"))
@@ -343,7 +455,7 @@ def train(args):
 
         # ── Log ────────────────────────────────────────────────────────────────
         if ep % LOG_FREQ == 0:
-            elapsed = time.time() - t0
+            elapsed     = time.time() - t0
             eps_per_sec = (ep - start_ep + 1) / max(elapsed, 1e-6)
             print(
                 f"ep {ep:>9,} | ε={epsilon:.4f} | buf={len(buffer):>6,} "
@@ -353,19 +465,34 @@ def train(args):
                 csv.writer(f).writerow([ep, round(epsilon, 5), round(loss_val, 6),
                                         round(eval_profit, 3) if not np.isnan(eval_profit) else ""])
 
-    # Final eval
-    final_profit = evaluate(online_net, args.env_tag, args.ne_strategy, EVAL_RUNS, device)
+        ep += 1
+
+    # ── Final eval ─────────────────────────────────────────────────────────────
+    final_profit = evaluate(online_net, args.env_tag, args.ne_strategy,
+                            EVAL_RUNS, device)
     print(f"\nFinal eval profit (greedy, {EVAL_RUNS} runs): {final_profit:.1f}")
     if final_profit > best_profit:
         torch.save(online_net.state_dict(), os.path.join(save_dir, "best_model.pt"))
     print(f"Models saved to {save_dir}/")
+
+    # ── Shutdown workers ────────────────────────────────────────────────────────
+    for wq in weights_qs:
+        try:
+            wq.get_nowait()
+        except queue.Empty:
+            pass
+        wq.put(None)
+    for p in worker_procs:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
 
 
 def eval_only(args):
     """Load a saved model and run evaluation."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy = TRONPolicy2(input_dim=14, hidden_dim=HIDDEN_DIM).to(device)
-    policy.load_state_dict(torch.load(args.load, map_location=device))
+    policy.load_state_dict(torch.load(args.load, map_location=device, weights_only=True))
     policy.eval()
 
     profit = evaluate(policy, args.env_tag, args.ne_strategy, EVAL_RUNS, device)
@@ -391,10 +518,13 @@ def parse_args():
                    help="Path to .pt model weights to load (eval or resume)")
     p.add_argument("--start-episode", default=1, type=int,
                    help="Episode to resume from (set epsilon and loop start accordingly)")
+    p.add_argument("--n-workers", default=16, type=int,
+                   help="Parallel episode-collection workers (1 = serial; default: 16)")
     return p.parse_args()
 
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     args = parse_args()
     if args.eval_only:
         if args.load is None:
