@@ -4,7 +4,7 @@ train_tron2.py — R2D2 training for the TRON2 agent (ICAIF24, §5.3).
 Trains a TRONPolicy2 (Dueling DQN + LSTM) via episode-based R2D2:
   - Episode replay buffer (full episodes stored as padded sequences)
   - n-step returns (n=N_STEP)
-  - Target network (hard update every TARGET_UPDATE gradient steps)
+  - Target network (Polyak soft update, TAU=0.005, every gradient step)
   - ε-greedy exploration (linear decay)
   - Periodic evaluation checkpointing
 
@@ -24,6 +24,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from marketsim.agent.tron2_agent import TRONPolicy2, N_SHADE, N_ETA
 from marketsim.wrappers.tron2_env import TRONEnv2, ENV_CONFIGS, STRATEGIES
@@ -34,11 +35,11 @@ BATCH_SIZE      = 32        # episodes per gradient step
 REPLAY_CAPACITY = 50_000    # max episodes in buffer
 MIN_BUFFER_EPS  = 1_000     # warmup: start learning after this many episodes
 TRAIN_FREQ      = 1         # gradient steps per episode (after warmup)
-TARGET_UPDATE   = 500       # hard target-net sync every N gradient steps
+TAU             = 0.005     # Polyak soft update coefficient
 GAMMA           = 0.99
 N_STEP          = 5
 LR              = 1e-4
-GRAD_CLIP       = 40.0
+GRAD_CLIP       = 10.0      # matches Dueling DQN §4.2 and train_tron.py (was 40.0)
 EPS_START       = 1.0
 EPS_END         = 0.05
 EPS_DECAY_EPS   = 500_000   # episodes over which ε decays linearly
@@ -161,13 +162,18 @@ def compute_loss(batch, online_net, target_net, gamma, n_step, device):
     dones   = batch["dones"]                  # (B, T)
     mask    = batch["mask"]                   # (B, T)
 
-    # Forward target network (no grad)
+    # Forward online network (with grad) — used for both action selection and Q_taken
+    Q_shade_on, Q_eta_on, _ = online_net(obs)       # (B, T, 21)
+
+    # Forward target network (no grad) — evaluates the actions online selects (Double DQN)
     with torch.no_grad():
         Q_shade_tg, Q_eta_tg, _ = target_net(obs)   # (B, T, 21)
 
-    # Bootstrap values = max Q per head
-    V_shade_tg = Q_shade_tg.max(dim=-1).values      # (B, T)
-    V_eta_tg   = Q_eta_tg.max(dim=-1).values        # (B, T)
+    # Double DQN bootstrap: online selects greedy action, target evaluates it
+    shade_act_sel = Q_shade_on.detach().argmax(dim=-1, keepdim=True)  # (B, T, 1)
+    eta_act_sel   = Q_eta_on.detach().argmax(  dim=-1, keepdim=True)  # (B, T, 1)
+    V_shade_tg    = Q_shade_tg.gather(2, shade_act_sel).squeeze(-1)   # (B, T)
+    V_eta_tg      = Q_eta_tg.gather(  2, eta_act_sel  ).squeeze(-1)   # (B, T)
 
     # Zero bootstrap at terminal states
     V_shade_tg = V_shade_tg * (~dones).float()
@@ -177,21 +183,18 @@ def compute_loss(batch, online_net, target_net, gamma, n_step, device):
     G_shade = _nstep_returns(rewards, V_shade_tg, dones, mask, gamma, n_step)
     G_eta   = _nstep_returns(rewards, V_eta_tg,   dones, mask, gamma, n_step)
 
-    # Forward online network
-    Q_shade_on, Q_eta_on, _ = online_net(obs)       # (B, T, 21)
-
     # Gather Q values for the actions taken
     a_shade = actions[:, :, 0].unsqueeze(-1)        # (B, T, 1)
     a_eta   = actions[:, :, 1].unsqueeze(-1)        # (B, T, 1)
     Q_shade_taken = Q_shade_on.gather(2, a_shade).squeeze(-1)  # (B, T)
     Q_eta_taken   = Q_eta_on.gather(  2, a_eta  ).squeeze(-1)  # (B, T)
 
-    # MSE loss, masked over valid steps
-    mask_f = mask.float()
+    # Huber loss (smooth_l1), masked over valid steps
+    mask_f  = mask.float()
     n_valid = mask_f.sum().clamp(min=1)
 
-    loss_shade = ((Q_shade_taken - G_shade.detach()) ** 2 * mask_f).sum() / n_valid
-    loss_eta   = ((Q_eta_taken   - G_eta.detach()  ) ** 2 * mask_f).sum() / n_valid
+    loss_shade = (F.smooth_l1_loss(Q_shade_taken, G_shade.detach(), reduction='none') * mask_f).sum() / n_valid
+    loss_eta   = (F.smooth_l1_loss(Q_eta_taken,   G_eta.detach(),   reduction='none') * mask_f).sum() / n_valid
 
     return loss_shade + loss_eta
 
@@ -320,8 +323,10 @@ def train(args):
             loss_val = loss.item()
             grad_step += 1
 
-            if grad_step % TARGET_UPDATE == 0:
-                target_net.load_state_dict(online_net.state_dict())
+            # Polyak soft target update every gradient step
+            with torch.no_grad():
+                for p_on, p_tgt in zip(online_net.parameters(), target_net.parameters()):
+                    p_tgt.data.mul_(1.0 - TAU).add_(TAU * p_on.data)
 
         # ── Save latest ────────────────────────────────────────────────────────
         if ep % LOG_FREQ == 0:

@@ -174,20 +174,6 @@ class TRONEnv2(gym.Env):
             pv_var=self.pv_var,
         )
 
-        # ── Shadow ZI agent: deterministic S8 for advantage-based reward ───────
-        # Arrives at the same time and side as RL agent; shares rl_agent.pv so
-        # per-episode private-value noise cancels in the advantage reward.
-        self.shadow_agent_id   = self.n_bg + 1   # 25
-        self.shadow_agent      = ZIAgent(
-            agent_id=self.shadow_agent_id,
-            market=self.market,
-            q_max=self.q_max,
-            shade=[500, 500],
-            pv_var=self.pv_var,
-            eta=0.5,
-        )
-        self.shadow_last_value = 0.0
-
         # ── Arrival buffers ────────────────────────────────────────────────────
         # BG events stored as min-heap of (time, agent_id); RL tracked separately.
         self.event_heap: list  = []
@@ -220,9 +206,6 @@ class TRONEnv2(gym.Env):
         for agent in self.agents.values():
             agent.reset()
         self.rl_agent.reset()
-        self.shadow_agent.reset()
-        self.shadow_agent.pv = self.rl_agent.pv   # share pv — cancels pv noise in advantage reward
-        self.shadow_last_value = 0.0
 
         self._reset_arrivals()
 
@@ -370,41 +353,7 @@ class TRONEnv2(gym.Env):
                    time=t, order_type=side, order_id=order_id)]
         )
 
-        # Schedule RL agent's next arrival and submit shadow order (same side)
         self._schedule_next_rl()
-        self._shadow_agent_step(side)
-
-    def _shadow_agent_step(self, side: int):
-        """Submit a deterministic S8 limit order for the shadow agent (same side as RL)."""
-        _SHADOW_SHADE = 500.0
-        _SHADOW_ETA   = 0.5
-        self.market.withdraw_all(self.shadow_agent_id)
-
-        t        = self.market.get_time()
-        estimate = self.shadow_agent.estimate_fundamental()
-        pv_value = self.shadow_agent.pv.value_for_exchange(self.shadow_agent.position, side)
-
-        if side == BUY:
-            price = estimate + pv_value - _SHADOW_SHADE
-        else:
-            price = estimate + pv_value + _SHADOW_SHADE
-
-        base_price = estimate + pv_value
-        if side == BUY:
-            best = self.market.order_book.get_best_ask()
-            if not math.isinf(best) and (base_price - best) > _SHADOW_ETA * _SHADOW_SHADE:
-                price = best
-        else:
-            best = self.market.order_book.get_best_bid()
-            if not math.isinf(best) and (best - base_price) > _SHADOW_ETA * _SHADOW_SHADE:
-                price = best
-
-        self.shadow_agent._order_counter += 1
-        order_id = self.shadow_agent_id * 1000000 + self.shadow_agent._order_counter
-        self.market.add_orders(
-            [Order(price=price, quantity=1, agent_id=self.shadow_agent_id,
-                   time=t, order_type=side, order_id=order_id)]
-        )
 
     def _agents_step(self):
         """Process BG agents that coincide with the RL arrival at self.time."""
@@ -433,8 +382,6 @@ class TRONEnv2(gym.Env):
             cash = -matched.price * matched.order.quantity * matched.order.order_type
             if aid == self.rl_agent_id:
                 self.rl_agent.update_position(qty, cash)
-            elif aid == self.shadow_agent_id:
-                self.shadow_agent.update_position(qty, cash)
             elif aid in self.agents:
                 self.agents[aid].update_position(qty, cash)
 
@@ -444,16 +391,8 @@ class TRONEnv2(gym.Env):
                 + self.rl_agent.cash
                 + self.rl_agent.get_pos_value()
             )
-            shadow_value = (
-                self.shadow_agent.position * self.final_fundamental
-                + self.shadow_agent.cash
-                + self.shadow_agent.get_pos_value()
-            )
-            reward = (
-                (current_value - self.last_value) - (shadow_value - self.shadow_last_value)
-            ) / self.normalizers["reward"]
+            reward = (current_value - self.last_value) / self.normalizers["reward"]
             self.last_value = current_value
-            self.shadow_last_value = shadow_value
             return reward
 
         return 0.0
@@ -464,23 +403,8 @@ class TRONEnv2(gym.Env):
             + self.rl_agent.cash
             + self.rl_agent.get_pos_value()
         )
-        shadow_value = (
-            self.shadow_agent.position * self.final_fundamental
-            + self.shadow_agent.cash
-            + self.shadow_agent.get_pos_value()
-        )
-        reward = (
-            (current_value - self.last_value) - (shadow_value - self.shadow_last_value)
-        ) / self.normalizers["reward"]
+        reward = (current_value - self.last_value) / self.normalizers["reward"]
         return self.get_obs(), reward, True, False, {}
-
-    def get_shadow_profit(self) -> float:
-        """Raw (unnormalised) profit for the shadow ZI agent at current state."""
-        return (
-            self.shadow_agent.position * self.final_fundamental
-            + self.shadow_agent.cash
-            + self.shadow_agent.get_pos_value()
-        )
 
     # ── Observation ────────────────────────────────────────────────────────────
 
